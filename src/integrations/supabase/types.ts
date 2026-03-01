@@ -14,7 +14,228 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      contacts: {
+        Row: {
+          channel: string | null
+          created_at: string
+          firm: string | null
+          id: string
+          last_contact_date: string | null
+          name: string
+          notes: string | null
+          role: string | null
+          sequence_step: string | null
+          status: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          channel?: string | null
+          created_at?: string
+          firm?: string | null
+          id?: string
+          last_contact_date?: string | null
+          name: string
+          notes?: string | null
+          role?: string | null
+          sequence_step?: string | null
+          status?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          channel?: string | null
+          created_at?: string
+          firm?: string | null
+          id?: string
+          last_contact_date?: string | null
+          name?: string
+          notes?: string | null
+          role?: string | null
+          sequence_step?: string | null
+          status?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      documents: {
+        Row: {
+          ai_status: string | null
+          doc_category: string | null
+          entities_count: number | null
+          file_type: string | null
+          filename: string
+          id: string
+          updated_at: string
+          uploaded_at: string
+          user_id: string
+        }
+        Insert: {
+          ai_status?: string | null
+          doc_category?: string | null
+          entities_count?: number | null
+          file_type?: string | null
+          filename: string
+          id?: string
+          updated_at?: string
+          uploaded_at?: string
+          user_id: string
+        }
+        Update: {
+          ai_status?: string | null
+          doc_category?: string | null
+          entities_count?: number | null
+          file_type?: string | null
+          filename?: string
+          id?: string
+          updated_at?: string
+          uploaded_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      jobs: {
+        Row: {
+          created_at: string
+          deadline: string | null
+          description: string | null
+          experience_level: string | null
+          firm: string
+          id: string
+          location: string | null
+          match_score: number | null
+          source: string | null
+          stage: string
+          tags: string[] | null
+          title: string
+          track: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          deadline?: string | null
+          description?: string | null
+          experience_level?: string | null
+          firm: string
+          id?: string
+          location?: string | null
+          match_score?: number | null
+          source?: string | null
+          stage?: string
+          tags?: string[] | null
+          title: string
+          track?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          deadline?: string | null
+          description?: string | null
+          experience_level?: string | null
+          firm?: string
+          id?: string
+          location?: string | null
+          match_score?: number | null
+          source?: string | null
+          stage?: string
+          tags?: string[] | null
+          title?: string
+          track?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          cv_text: string | null
+          display_name: string | null
+          email: string | null
+          experience_level: string | null
+          gpa: string | null
+          graduation_year: string | null
+          id: string
+          location: string | null
+          target_track: string | null
+          university: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          cv_text?: string | null
+          display_name?: string | null
+          email?: string | null
+          experience_level?: string | null
+          gpa?: string | null
+          graduation_year?: string | null
+          id?: string
+          location?: string | null
+          target_track?: string | null
+          university?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          cv_text?: string | null
+          display_name?: string | null
+          email?: string | null
+          experience_level?: string | null
+          gpa?: string | null
+          graduation_year?: string | null
+          id?: string
+          location?: string | null
+          target_track?: string | null
+          university?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      websites: {
+        Row: {
+          created_at: string
+          frequency: string | null
+          id: string
+          jobs_found: number | null
+          label: string | null
+          last_scanned: string | null
+          status: string | null
+          updated_at: string
+          url: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          frequency?: string | null
+          id?: string
+          jobs_found?: number | null
+          label?: string | null
+          last_scanned?: string | null
+          status?: string | null
+          updated_at?: string
+          url: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          frequency?: string | null
+          id?: string
+          jobs_found?: number | null
+          label?: string | null
+          last_scanned?: string | null
+          status?: string | null
+          updated_at?: string
+          url?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

@@ -1100,24 +1100,40 @@ const DISC_JOBS = [
     description:"Barclays is seeking Summer Analysts to join our Financial Institutions Group. Work on transactions spanning insurance, asset management, and banking." },
 ];
 
-/* ─── ANTHROPIC API CALL ─────────────────────────────────────────────────── */
+/* ─── AI API CALL (via Lovable Cloud edge function) ──────────────────────── */
 async function callClaude(prompt, systemPrompt = "", useWebSearch = false) {
-  const body = {
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 1000,
-    system: systemPrompt || "You are a career advisor for finance, consulting, and product management roles. Be concise and direct.",
-    messages: [{ role: "user", content: prompt }],
-  };
-  if (useWebSearch) {
-    body.tools = [{ type: "web_search_20250305", name: "web_search" }];
-  }
-  const resp = await fetch("https://api.anthropic.com/v1/messages", {
+  const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+  const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+  // Determine use case from system prompt content for backend routing
+  let useCase = "general";
+  if (systemPrompt.includes("interview") || systemPrompt.includes("Score")) useCase = "interview";
+  else if (systemPrompt.includes("cover letter")) useCase = "cover-letter";
+  else if (systemPrompt.includes("CV") || systemPrompt.includes("Tailor")) useCase = "cv-tailor";
+  else if (systemPrompt.includes("job search") || systemPrompt.includes("JSON array")) useCase = "job-search";
+  else if (systemPrompt.includes("outreach") || systemPrompt.includes("networking")) useCase = "outreach";
+  else if (systemPrompt.includes("Return only a JSON array")) useCase = "website-scan";
+
+  const resp = await fetch(`${SUPABASE_URL}/functions/v1/ai-chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
+    },
+    body: JSON.stringify({
+      messages: [{ role: "user", content: prompt }],
+      systemPrompt,
+      useCase,
+    }),
   });
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ error: "AI request failed" }));
+    throw new Error(err.error || "AI request failed");
+  }
+
   const data = await resp.json();
-  return data.content?.map(b => b.text || "").filter(Boolean).join("\n") || "No response";
+  return data.content || "No response";
 }
 
 /* ─── NAV CONFIG ────────────────────────────────────────────────────────── */

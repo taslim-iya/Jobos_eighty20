@@ -13,6 +13,11 @@ export default {
       },
     },
     extend: {
+      fontFamily: {
+        display: ["'Cormorant Garamond'", "serif"],
+        body: ["'Sora'", "sans-serif"],
+        mono: ["'JetBrains Mono'", "monospace"],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -56,6 +61,21 @@ export default {
           "accent-foreground": "hsl(var(--sidebar-accent-foreground))",
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
+        },
+        gold: {
+          DEFAULT: "hsl(37 44% 55%)",
+          light: "hsl(37 55% 70%)",
+          dark: "hsl(37 50% 40%)",
+          bg: "hsl(37 44% 55% / 0.08)",
+        },
+        navy: {
+          DEFAULT: "hsl(220 50% 14%)",
+          light: "hsl(220 40% 22%)",
+          dark: "hsl(220 50% 10%)",
+        },
+        ivory: {
+          DEFAULT: "hsl(40 33% 96%)",
+          dark: "hsl(37 24% 92%)",
         },
       },
       borderRadius: {

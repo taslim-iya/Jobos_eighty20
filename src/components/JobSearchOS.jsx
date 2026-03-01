@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { fetchJobs, upsertJob, deleteJob } from "@/lib/database";
 
 /* ─────────────────────────────────────────────────────────────────────────────
    DESIGN SYSTEM — "FT Editorial Light"
@@ -2868,14 +2870,66 @@ const PAGE_TITLES = {
 };
 
 export default function JobSearchOS() {
+  const { user, profile: authProfile, signOut } = useAuth();
   const [page, setPage] = useState("dashboard");
-  const [jobs, setJobs] = useState(INIT_JOBS);
-  const [profile] = useState({ name: "Alexandra Chen", track: "ib", level: "undergrad" });
+  const [jobs, setJobs] = useState([]);
+  const [dbLoaded, setDbLoaded] = useState(false);
+
+  const profile = {
+    name: authProfile?.display_name || user?.email?.split("@")[0] || "User",
+    track: authProfile?.target_track || "ib",
+    level: authProfile?.experience_level || "undergrad",
+  };
+
+  // Load jobs from database on mount
+  useEffect(() => {
+    if (!user) return;
+    fetchJobs(user.id).then(({ data }) => {
+      if (data && data.length > 0) {
+        setJobs(data.map(j => ({
+          id: j.id,
+          title: j.title,
+          firm: j.firm,
+          stage: j.stage,
+          deadline: j.deadline || "—",
+          match: j.match_score || 0,
+          tags: j.tags || [],
+          track: j.track,
+          level: j.experience_level,
+          location: j.location,
+          description: j.description,
+          source: j.source,
+        })));
+      } else {
+        // Seed with initial data for new users
+        setJobs(INIT_JOBS);
+        INIT_JOBS.forEach(job => upsertJob(user.id, job));
+      }
+      setDbLoaded(true);
+    });
+  }, [user]);
+
+  // Wrap setJobs to also persist to DB
+  const setJobsWithDb = useCallback((updater) => {
+    setJobs(prev => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      // Find new jobs that weren't in prev
+      if (user) {
+        const prevIds = new Set(prev.map(j => j.id));
+        next.forEach(job => {
+          if (!prevIds.has(job.id)) {
+            upsertJob(user.id, job);
+          }
+        });
+      }
+      return next;
+    });
+  }, [user]);
 
   const renderPage = () => {
     switch (page) {
       case "dashboard":  return <Dashboard jobs={jobs} profile={profile}/>;
-      case "discover":   return <JobDiscovery jobs={jobs} setJobs={setJobs} profile={profile} setProfile={()=>{}}/>;
+      case "discover":   return <JobDiscovery jobs={jobs} setJobs={setJobsWithDb} profile={profile} setProfile={()=>{}}/>;
       case "websites":   return <WebsiteManager/>;
       case "pipeline":   return <Pipeline jobs={jobs}/>;
       case "playbooks":  return <Playbooks/>;
@@ -2944,11 +2998,11 @@ export default function JobSearchOS() {
           </div>
 
           <div className="sidebar-user">
-            <div className="user-chip">
-              <div className="avatar">AC</div>
+            <div className="user-chip" onClick={signOut} title="Click to sign out">
+              <div className="avatar">{profile.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}</div>
               <div>
-                <div className="user-name">Alex Chen</div>
-                <div className="user-meta">IB · Undergrad · Columbia '25</div>
+                <div className="user-name">{profile.name}</div>
+                <div className="user-meta">{profile.track === "ib" ? "IB" : profile.track === "consulting" ? "Consulting" : "Product"} · {profile.level === "undergrad" ? "Undergrad" : "Experienced"}</div>
               </div>
             </div>
           </div>

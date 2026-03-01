@@ -970,6 +970,124 @@ select.input {
 .coming-icon { font-size: 42px; margin-bottom: 16px; opacity: 0.5; }
 .coming-title { font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 700; color: var(--ink); margin-bottom: 8px; }
 .coming-desc  { font-size: 13px; color: var(--ink3); max-width: 380px; margin: 0 auto; line-height: 1.7; }
+
+/* ── MOBILE HAMBURGER ── */
+.mobile-hamburger {
+  display: none;
+  width: 36px; height: 36px;
+  background: var(--navy2);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: white;
+  font-size: 18px;
+}
+
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 99;
+}
+
+.sidebar-close {
+  display: none;
+  position: absolute;
+  top: 16px; right: 16px;
+  width: 28px; height: 28px;
+  background: rgba(255,255,255,0.1);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  color: rgba(255,255,255,0.7);
+  font-size: 16px;
+  align-items: center;
+  justify-content: center;
+}
+.sidebar-close:hover { background: rgba(255,255,255,0.2); }
+
+/* ── TABLET (≤1024px) ── */
+@media (max-width: 1024px) {
+  .g4 { grid-template-columns: repeat(2, 1fr); }
+  .g3 { grid-template-columns: repeat(2, 1fr); }
+  .kanban { flex-wrap: nowrap; }
+  .page { padding: 22px 20px; }
+  .topbar { padding: 0 20px; }
+  .topbar-actions .btn-gold { display: none; }
+}
+
+/* ── MOBILE (≤768px) ── */
+@media (max-width: 768px) {
+  .mobile-hamburger { display: flex; }
+  .sidebar-close { display: flex; }
+
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform .25s ease;
+    width: 260px;
+  }
+  .sidebar.open {
+    transform: translateX(0);
+  }
+  .sidebar-overlay.open {
+    display: block;
+  }
+
+  .main {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .topbar {
+    padding: 0 14px;
+    height: 52px;
+    gap: 10px;
+  }
+  .topbar-title { font-size: 17px; }
+  .topbar-actions input { display: none; }
+  .topbar-actions .btn-gold { display: none; }
+
+  .page { padding: 16px 14px; }
+  .g2, .g3, .g4 { grid-template-columns: 1fr; }
+  .g-auto { grid-template-columns: 1fr; }
+
+  .section-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .section-title { font-size: 22px; }
+
+  .card { padding: 16px; }
+  .card-flat { padding: 14px 16px; }
+  .card-header { flex-direction: column; gap: 8px; }
+
+  .kpi-val { font-size: 22px; }
+  .kanban { flex-direction: column; }
+  .k-col { min-width: 100%; }
+
+  .table { font-size: 12px; }
+  .table th, .table td { padding: 8px 10px; }
+  .table th:nth-child(n+4), .table td:nth-child(n+4) { display: none; }
+
+  .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tab { padding: 8px 14px; font-size: 12px; }
+
+  .coming-box { padding: 40px 20px; }
+
+  .f { flex-direction: column; }
+  .f.wrap { flex-direction: column; }
+}
+
+/* ── SMALL MOBILE (≤480px) ── */
+@media (max-width: 480px) {
+  .topbar-title { font-size: 15px; }
+  .btn { padding: 7px 12px; font-size: 11.5px; }
+  .btn-sm { padding: 4px 10px; font-size: 10.5px; }
+  .section-title { font-size: 20px; }
+  .kpi { padding: 14px; }
+  .kpi-val { font-size: 20px; }
+}
 `;
 
 /* ─── SEED DATA ──────────────────────────────────────────────────────────── */
@@ -2872,6 +2990,7 @@ const PAGE_TITLES = {
 export default function JobSearchOS() {
   const { user, profile: authProfile, signOut } = useAuth();
   const [page, setPage] = useState("dashboard");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [jobs, setJobs] = useState([]);
   const [dbLoaded, setDbLoaded] = useState(false);
 
@@ -2957,8 +3076,12 @@ export default function JobSearchOS() {
     <>
       <style>{CSS}</style>
       <div className="app">
+        {/* ── MOBILE OVERLAY ── */}
+        <div className={`sidebar-overlay ${mobileMenuOpen ? "open" : ""}`} onClick={() => setMobileMenuOpen(false)} />
+
         {/* ── SIDEBAR ── */}
-        <aside className="sidebar">
+        <aside className={`sidebar ${mobileMenuOpen ? "open" : ""}`}>
+          <button className="sidebar-close" onClick={() => setMobileMenuOpen(false)}>✕</button>
           <div className="sidebar-logo">
             <div className="logo-lockup">
               <div className="logo-mark">JS</div>
@@ -2975,7 +3098,7 @@ export default function JobSearchOS() {
               {section.items.map(item => (
                 <div key={item.id}
                   className={`nav-item ${page === item.id ? "active" : ""}`}
-                  onClick={() => setPage(item.id)}>
+                  onClick={() => { setPage(item.id); setMobileMenuOpen(false); }}>
                   <span className="nav-icon">{item.icon}</span>
                   <span>{item.label}</span>
                   {item.badge && (
@@ -2989,7 +3112,7 @@ export default function JobSearchOS() {
           <div className="nav-section">
             <div className="nav-section-label">Coming Soon</div>
             {[{id:"v2",icon:"👥",label:"Mentor Marketplace",v:"V2"},{id:"v3",icon:"💰",label:"Offer Suite",v:"V3"}].map(item=>(
-              <div key={item.id} className="nav-item" onClick={()=>setPage(item.id)} style={{opacity:0.45}}>
+              <div key={item.id} className="nav-item" onClick={()=>{ setPage(item.id); setMobileMenuOpen(false); }} style={{opacity:0.45}}>
                 <span className="nav-icon">{item.icon}</span>
                 <span>{item.label}</span>
                 <span style={{marginLeft:"auto",fontFamily:"JetBrains Mono,monospace",fontSize:9,color:"var(--gold3)",border:"1px solid rgba(255,255,255,0.12)",padding:"1px 6px",borderRadius:4}}>{item.v}</span>
@@ -3011,6 +3134,7 @@ export default function JobSearchOS() {
         {/* ── MAIN ── */}
         <main className="main">
           <div className="topbar">
+            <button className="mobile-hamburger" onClick={() => setMobileMenuOpen(true)}>☰</button>
             <div className="topbar-title">{PAGE_TITLES[page] || page}</div>
             <div className="topbar-actions">
               <input className="input" placeholder="Search everything..." style={{width:200,padding:"6px 12px"}}/>

@@ -2636,7 +2636,7 @@ Return the full tailored CV text only, no commentary.`;
 /* ════════════════════════════════════════════════════════════════════════════
    PAGE: PIPELINE
 ══════════════════════════════════════════════════════════════════════════════ */
-function Pipeline({ jobs }) {
+function Pipeline({ jobs, setJobs }) {
   const { user } = useAuth();
   const stages = ["saved","outreach","applying","interviewing","offer"];
   const labels = {saved:"Saved",outreach:"Outreach",applying:"Applying",interviewing:"Interviewing",offer:"Offer ✓"};
@@ -2645,6 +2645,9 @@ function Pipeline({ jobs }) {
   const [uploading, setUploading] = useState(false);
   const [uploadLog, setUploadLog] = useState("");
   const crmFileRef = useRef(null);
+  const jobFileRef = useRef(null);
+  const [jobUploading, setJobUploading] = useState(false);
+  const [jobUploadLog, setJobUploadLog] = useState("");
 
   // Load contacts from DB
   useEffect(() => {
@@ -2659,6 +2662,92 @@ function Pipeline({ jobs }) {
       Location: j.location || "", Level: j.level || "",
     }));
     exportToCSV(exportData, "pipeline_export");
+  };
+
+  const handleJobUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+    setJobUploading(true);
+    setJobUploadLog("📄 Reading file...");
+    try {
+      let textContent = "";
+      const ext = file.name.split(".").pop().toLowerCase();
+
+      if (ext === "csv" || ext === "xlsx" || ext === "xls") {
+        textContent = await file.text();
+      } else {
+        const reader = new FileReader();
+        const base64 = await new Promise((resolve) => {
+          reader.onload = () => resolve(reader.result.split(",")[1]);
+          reader.readAsDataURL(file);
+        });
+        setJobUploadLog("🤖 Extracting text from document...");
+        const { data, error } = await supabase.functions.invoke("extract-document", {
+          body: { base64, fileName: file.name, mimeType: file.type },
+        });
+        if (error || data?.error) throw new Error(data?.error || error?.message || "Extraction failed");
+        textContent = data.text;
+      }
+
+      setJobUploadLog("🤖 AI is parsing jobs from your file...");
+      const prompt = `Parse the following document content into a list of job opportunities. Extract: title (job title), firm (company name), track (one of: ib, consulting, product), level (undergrad or experienced), location, deadline, description, source (where the job was found), and url (application link if available).
+
+Return ONLY a valid JSON array like:
+[{"title":"Summer Analyst 2026","firm":"Goldman Sachs","track":"ib","level":"undergrad","location":"London","deadline":"Rolling","description":"IBD summer analyst programme","source":"Company Website","url":"https://..."}]
+
+If there are no jobs, return [].
+
+Document content:
+${textContent.slice(0, 8000)}`;
+
+      const result = await callClaude(prompt, "You are a job data parser. Return ONLY valid JSON array. No markdown, no explanation.", true);
+      const clean = result.replace(/```json|```/g, "").trim();
+      const start = clean.indexOf("[");
+      const end = clean.lastIndexOf("]") + 1;
+      if (start < 0) throw new Error("Could not parse jobs from file");
+
+      const parsed = JSON.parse(clean.slice(start, end));
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        setJobUploadLog("⚠ No jobs found in the file.");
+        setJobUploading(false);
+        return;
+      }
+
+      let inserted = 0;
+      for (const j of parsed) {
+        const { error } = await upsertJob(user.id, {
+          title: j.title || "Untitled Role",
+          firm: j.firm || j.company || "Unknown",
+          stage: "saved",
+          track: j.track || "ib",
+          level: j.level || "undergrad",
+          location: j.location || "",
+          deadline: j.deadline || "Rolling",
+          description: j.description || "",
+          source: j.source || "File Upload",
+          url: j.url || "",
+          match: 80,
+          tags: j.track === "ib" ? ["IB"] : j.track === "consulting" ? ["Consulting"] : ["Product"],
+        });
+        if (!error) inserted++;
+      }
+
+      // Refresh jobs from DB
+      const { data: refreshed } = await fetchJobs(user.id);
+      if (refreshed) {
+        setJobs(refreshed.map(j => ({
+          id: j.id, title: j.title, firm: j.firm, stage: j.stage,
+          deadline: j.deadline || "—", match: j.match_score || 0,
+          tags: j.tags || [], track: j.track, level: j.experience_level,
+          location: j.location, description: j.description, source: j.source, url: j.url,
+        })));
+      }
+      setJobUploadLog(`✅ Imported ${inserted} jobs from ${file.name}`);
+    } catch (err) {
+      setJobUploadLog(`⚠ Upload failed: ${err.message}`);
+    }
+    setJobUploading(false);
+    if (jobFileRef.current) jobFileRef.current.value = "";
   };
 
   const handleCrmUpload = async (e) => {
@@ -2745,9 +2834,13 @@ ${textContent.slice(0, 6000)}`;
   return (
     <div className="page">
       <input type="file" ref={crmFileRef} style={{display:"none"}} accept=".csv,.xlsx,.xls,.pdf,.docx,.doc,.txt" onChange={handleCrmUpload}/>
+      <input type="file" ref={jobFileRef} style={{display:"none"}} accept=".csv,.xlsx,.xls,.pdf,.docx,.doc,.txt" onChange={handleJobUpload}/>
       <div className="section-header">
         <div><div className="eyebrow">CRM Pipeline</div><div className="section-title">Job Tracking Board</div></div>
         <div className="flex g10">
+          <button className="btn btn-outline btn-sm" onClick={()=>jobFileRef.current?.click()} disabled={jobUploading}>
+            {jobUploading ? "⏳ Parsing..." : "📄 Import Jobs"}
+          </button>
           <button className="btn btn-outline btn-sm" onClick={handleExportCSV}>⬇ Export CSV</button>
           <button className="btn btn-primary btn-sm">+ Add Role</button>
         </div>
@@ -2761,6 +2854,8 @@ ${textContent.slice(0, 6000)}`;
 
       {crmTab === "pipeline" && (
         <>
+          {jobUploading && <div className="ai-pulse mb16"><div className="dot-spin"/>{jobUploadLog}</div>}
+          {!jobUploading && jobUploadLog && <div className={`alert ${jobUploadLog.startsWith("✅")?"a-green":"a-gold"} mb16`}>{jobUploadLog}</div>}
           <div className="grid g4 mb20">
             {[
               { l:"Tracked", v:jobs.length },
@@ -4129,7 +4224,7 @@ export default function JobSearchOS() {
       case "dashboard":  return <Dashboard jobs={jobs} profile={profile}/>;
       case "discover":   return <JobDiscovery jobs={jobs} setJobs={setJobsWithDb} profile={profile} setProfile={()=>{}}/>;
       case "websites":   return <WebsiteManager/>;
-      case "pipeline":   return <Pipeline jobs={jobs}/>;
+      case "pipeline":   return <Pipeline jobs={jobs} setJobs={setJobsWithDb}/>;
       case "playbooks":  return <Playbooks/>;
       case "documents":  return <Documents/>;
       case "cv":         return <CVStudio jobs={jobs}/>;

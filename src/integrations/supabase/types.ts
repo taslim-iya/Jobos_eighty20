@@ -64,6 +64,8 @@ export type Database = {
           ai_status: string | null
           doc_category: string | null
           entities_count: number | null
+          file_path: string | null
+          file_size: number | null
           file_type: string | null
           filename: string
           id: string
@@ -75,6 +77,8 @@ export type Database = {
           ai_status?: string | null
           doc_category?: string | null
           entities_count?: number | null
+          file_path?: string | null
+          file_size?: number | null
           file_type?: string | null
           filename: string
           id?: string
@@ -86,6 +90,8 @@ export type Database = {
           ai_status?: string | null
           doc_category?: string | null
           entities_count?: number | null
+          file_path?: string | null
+          file_size?: number | null
           file_type?: string | null
           filename?: string
           id?: string

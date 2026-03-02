@@ -178,8 +178,64 @@ export async function upsertDocument(userId, doc) {
       doc_category: doc.doc_category || doc.category || "Other",
       ai_status: doc.ai_status || "pending",
       entities_count: doc.entities_count || 0,
+      file_path: doc.file_path || null,
+      file_size: doc.file_size || null,
     })
     .select()
     .single();
   return { data, error };
+}
+
+export async function deleteDocument(userId, docId) {
+  return supabase.from("documents").delete().eq("id", docId).eq("user_id", userId);
+}
+
+// ─── FILE UPLOAD ───
+export async function uploadFile(userId, file) {
+  const fileExt = file.name.split('.').pop();
+  const filePath = `${userId}/${Date.now()}.${fileExt}`;
+  
+  const { data, error } = await supabase.storage
+    .from("documents")
+    .upload(filePath, file);
+  
+  if (error) return { data: null, error };
+  
+  return { data: { path: filePath, fullPath: data.path }, error: null };
+}
+
+export async function deleteFile(filePath) {
+  return supabase.storage.from("documents").remove([filePath]);
+}
+
+// ─── EXPORT HELPERS ───
+export function exportToCSV(data, filename) {
+  if (!data || data.length === 0) return;
+  const headers = Object.keys(data[0]);
+  const csvContent = [
+    headers.join(','),
+    ...data.map(row => headers.map(h => {
+      const val = row[h];
+      if (val === null || val === undefined) return '';
+      const str = String(val);
+      return str.includes(',') || str.includes('"') || str.includes('\n') 
+        ? `"${str.replace(/"/g, '""')}"` : str;
+    }).join(','))
+  ].join('\n');
+  
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `${filename}_${new Date().toISOString().slice(0,10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+export function exportToText(text, filename) {
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `${filename}_${new Date().toISOString().slice(0,10)}.txt`;
+  link.click();
+  URL.revokeObjectURL(link.href);
 }

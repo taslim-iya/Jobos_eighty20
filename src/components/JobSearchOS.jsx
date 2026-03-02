@@ -1208,20 +1208,7 @@ const INIT_WEBSITES = [
   { id:4, url:"https://www.linkedin.com/jobs", label:"LinkedIn Jobs", freq:"daily", lastScanned:"30m ago", jobsFound:12, status:"active" },
 ];
 
-const DISC_JOBS = [
-  { id:101, title:"IBD Analyst – Technology", firm:"JPMorgan", location:"London", deadline:"Mar 20", match:91, tags:["IB","Tech"], source:"JPMorgan Careers", track:"ib", level:"undergrad", saved:false,
-    description:"Join JPMorgan's Technology Investment Banking Division as an Analyst. Work on M&A, ECM, and DCM transactions for leading technology companies." },
-  { id:102, title:"Summer Associate – M&A", firm:"Evercore", location:"New York", deadline:"Apr 5", match:87, tags:["IB","SA","M&A"], source:"Evercore Careers", track:"ib", level:"undergrad", saved:false,
-    description:"Evercore is seeking motivated candidates for our M&A Summer Associate program. Ideal candidates have strong financial modeling skills and prior banking exposure." },
-  { id:103, title:"Business Analyst", firm:"McKinsey & Co", location:"London", deadline:"Mar 28", match:84, tags:["Consulting","BA"], source:"McKinsey Careers", track:"consulting", level:"undergrad", saved:false,
-    description:"McKinsey's Business Analyst role is ideal for recent graduates who want to solve complex business problems for the world's leading companies." },
-  { id:104, title:"Associate Product Manager", firm:"Google", location:"London", deadline:"Apr 15", match:78, tags:["Product","APM"], source:"Google Careers", track:"product", level:"undergrad", saved:false,
-    description:"Join Google's APM program and help build products used by billions. Work closely with engineers, designers, and senior PMs across key product areas." },
-  { id:105, title:"Strategy & Advisory Analyst", firm:"Deloitte", location:"London", deadline:"Apr 10", match:73, tags:["Consulting","Strategy"], source:"Deloitte Careers", track:"consulting", level:"undergrad", saved:false,
-    description:"Join Deloitte's Strategy & Advisory practice to work with FTSE 100 clients on their most pressing strategic challenges." },
-  { id:106, title:"IB Summer Analyst – FIG", firm:"Barclays", location:"London", deadline:"Mar 12", match:88, tags:["IB","FIG","SA"], source:"Barclays Careers", track:"ib", level:"undergrad", saved:false,
-    description:"Barclays is seeking Summer Analysts to join our Financial Institutions Group. Work on transactions spanning insurance, asset management, and banking." },
-];
+const DISC_JOBS = [];
 
 /* ─── AI API CALL (via Lovable Cloud edge function) ──────────────────────── */
 async function callClaude(prompt, systemPrompt = "", useWebSearch = false) {
@@ -1291,9 +1278,9 @@ function Dashboard({ jobs, profile }) {
   return (
     <div className="page">
       <div className="hero">
-        <div className="hero-eye">Week 7 of 12 · {profile.track === "ib" ? "IB" : profile.track === "consulting" ? "Consulting" : "Product"} Track · {profile.level === "undergrad" ? "Undergraduate" : "Experienced Hire"}</div>
-        <div className="hero-h">Good morning, {profile.name.split(" ")[0]}.<br/>You have 3 deadlines this week.</div>
-        <div className="hero-p">On track for your Goldman Sachs superday. Complete today's tasks to stay ahead of 94% of candidates at target schools.</div>
+        <div className="hero-eye">{profile.track === "ib" ? "IB" : profile.track === "consulting" ? "Consulting" : "Product"} Track · {profile.level === "undergrad" ? "Undergraduate" : "Experienced Hire"}</div>
+        <div className="hero-h">Welcome back, {profile.name.split(" ")[0]}.<br/>{jobs.filter(j=>j.stage!=="saved"&&j.stage!=="offer").length > 0 ? `You have ${jobs.filter(j=>j.stage!=="saved"&&j.stage!=="offer").length} active applications.` : "Start by discovering roles."}</div>
+        <div className="hero-p">{jobs.filter(j=>j.stage==="interviewing").length > 0 ? `${jobs.filter(j=>j.stage==="interviewing").length} interview(s) in progress. Focus on preparation.` : jobs.length > 0 ? "Keep building your pipeline and preparing for interviews." : "Use Job Discovery to find and save roles to your pipeline."}</div>
         <div className="hero-actions">
           <button className="btn btn-gold">📋 Today's Tasks</button>
           <button className="btn" style={{background:"rgba(255,255,255,0.12)", color:"white", borderColor:"rgba(255,255,255,0.2)"}}>View Weekly Plan →</button>
@@ -1302,10 +1289,10 @@ function Dashboard({ jobs, profile }) {
 
       <div className="grid g4 mb20">
         {[
-          { l:"Applications", v:jobs.filter(j=>j.stage!=="saved").length, d:"+3 this wk", up:true },
-          { l:"Reply Rate", v:"34%", d:"+8pp", up:true },
-          { l:"Interviews", v:jobs.filter(j=>j.stage==="interviewing").length, d:"+1", up:true },
-          { l:"Readiness", v:"78%", d:"+5pp", up:true },
+          { l:"Applications", v:jobs.filter(j=>j.stage!=="saved").length, d:`${jobs.length} total`, up:jobs.filter(j=>j.stage!=="saved").length>0 },
+          { l:"Outreach", v:jobs.filter(j=>j.stage==="outreach").length, d:"contacts made", up:jobs.filter(j=>j.stage==="outreach").length>0 },
+          { l:"Interviews", v:jobs.filter(j=>j.stage==="interviewing").length, d:"in progress", up:jobs.filter(j=>j.stage==="interviewing").length>0 },
+          { l:"Offers", v:jobs.filter(j=>j.stage==="offer").length, d:jobs.filter(j=>j.stage==="offer").length>0?"secured":"none yet", up:jobs.filter(j=>j.stage==="offer").length>0 },
         ].map(k => (
           <div key={k.l} className="kpi">
             <div className="kpi-label">{k.l}</div>
@@ -1419,13 +1406,47 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
   const runWebsiteScan = async () => {
     setScanning(true);
     setScanLog([]);
-    const sites = ["Goldman Sachs Careers", "Morgan Stanley Careers", "JPMorgan Careers", "LinkedIn Jobs"];
-    for (let i = 0; i < sites.length; i++) {
-      await new Promise(r => setTimeout(r, 900));
-      setScanLog(prev => [...prev, `✓ Scanned ${sites[i]} — found ${Math.floor(Math.random()*5)+1} relevant roles`]);
+    const trackName = trackFilter === "ib" ? "investment banking" : trackFilter === "consulting" ? "management consulting" : "product management";
+    const trackKw = {
+      ib: "investment banking analyst associate M&A ECM DCM summer analyst leveraged finance",
+      consulting: "management consulting business analyst strategy consultant associate",
+      product: "product manager APM associate product manager growth PM",
+    };
+    
+    try {
+      setScanLog(["🔄 Scanning the web for live job postings..."]);
+      const prompt = `Search for current, real job openings in ${trackName} for ${levelFilter === "undergrad" ? "undergraduates/graduates/summer analysts" : "experienced professionals"} in ${locationFilter || "major financial hubs (London, New York, Hong Kong)"}.
+Keywords: ${trackKw[trackFilter] || trackKw.ib}.
+
+Return ONLY a valid JSON array of 6-10 real job postings found online:
+[{"title":"...","firm":"...","location":"...","deadline":"...","description":"...(2 sentences max)","match":85,"tags":["tag1","tag2"],"source":"website name"}]
+
+Use real company names. Be realistic about deadlines and descriptions.`;
+      
+      const result = await callClaude(prompt, "You are a job search assistant. Return ONLY valid JSON array. No markdown, no explanation.", true);
+      const clean = result.replace(/```json|```/g, "").trim();
+      const start = clean.indexOf("[");
+      const end = clean.lastIndexOf("]") + 1;
+      if (start >= 0) {
+        const parsed = JSON.parse(clean.slice(start, end));
+        const withId = parsed.map((j, i) => ({
+          ...j, id: 300 + Date.now() + i, track: trackFilter, level: levelFilter, saved: false,
+          source: j.source || "Web Search",
+          tags: j.tags || [trackFilter === "ib" ? "IB" : trackFilter === "consulting" ? "Consulting" : "Product"],
+        }));
+        setDiscJobs(prev => {
+          const existingTitles = new Set(prev.map(j => j.title + j.firm));
+          const newJobs = withId.filter(j => !existingTitles.has(j.title + j.firm));
+          return [...newJobs, ...prev];
+        });
+        setScanLog(prev => [...prev, `✓ Found ${withId.length} live ${trackName} roles across ${new Set(withId.map(j=>j.firm)).size} firms.`]);
+      } else {
+        setScanLog(prev => [...prev, "⚠ Could not parse results. Try AI Search tab for better results."]);
+      }
+    } catch (err) {
+      setScanLog(prev => [...prev, `⚠ Scan failed: ${err.message}. Try again.`]);
     }
     setScanning(false);
-    setScanLog(prev => [...prev, "✓ Scan complete. 12 new roles found."]);
   };
 
   const runAiSearch = async () => {
@@ -1820,27 +1841,7 @@ function WebsiteManager() {
 /* ════════════════════════════════════════════════════════════════════════════
    PAGE: CV + COVER LETTERS
 ══════════════════════════════════════════════════════════════════════════════ */
-const SAMPLE_CV = `ALEXANDRA CHEN
-alex.chen@columbia.edu | New York, NY | linkedin.com/in/alexchen
-
-EDUCATION
-Columbia University, B.S. Finance & Economics — GPA: 3.82/4.0 | Expected May 2025
-Relevant Coursework: Corporate Finance, Financial Modeling, Investment Management
-
-EXPERIENCE
-Goldman Sachs — Summer Analyst, Technology M&A | Jun–Aug 2023
-• Led due diligence on 3 software transactions with combined EV of $2.3B
-• Built integrated LBO/DCF models cited in final client materials for $780M deal
-• Prepared 12 client-ready pitch decks, reducing MD revision cycles by 30%
-
-Morgan Stanley — Spring Intern, Equity Research | Jan–Apr 2022
-• Initiated coverage model on 4 SaaS companies; 2 calls reached consensus within 45 days
-• Authored 3 sector notes; team achieved +18% outperformance in covered names
-
-SKILLS
-Technical: Financial Modeling, LBO, DCF, 3-Statement, Bloomberg, FactSet
-Software:  Excel (VBA), Python (Pandas), SQL, PowerPoint
-Languages: English (native), Mandarin (fluent)`;
+const SAMPLE_CV = ``;
 
 function CVStudio({ jobs }) {
   const [tab, setTab] = useState("cv");
@@ -2261,9 +2262,35 @@ Return the full tailored CV text only, no commentary.`;
                   </div>
                 )}
                 {generatedCL && !generating && (
-                  <div className="flex g10 mt12">
+                  <div className="flex g10 mt12" style={{flexWrap:"wrap"}}>
                     <button className="btn btn-primary" onClick={()=>navigator.clipboard.writeText(generatedCL)}>📋 Copy</button>
-                    <button className="btn btn-outline" onClick={()=>exportToText(generatedCL, `cover_letter_${selectedJob?.firm||"draft"}`)}>⬇ Export .txt</button>
+                    <button className="btn btn-outline btn-sm" onClick={async () => {
+                      const el = document.createElement("div");
+                      el.style.cssText = "position:absolute;left:-9999px;top:0;width:794px;padding:36px 54px;font-family:'Times New Roman',Times,serif;font-size:11pt;line-height:1.4;color:#000;background:#fff;";
+                      el.innerHTML = `<div style="font-size:11pt;line-height:1.6;white-space:pre-wrap;">${generatedCL.replace(/\n/g,'<br/>')}</div>`;
+                      document.body.appendChild(el);
+                      try {
+                        const canvas = await html2canvas(el, { scale: 3, useCORS: true });
+                        const pdf = new jsPDF("p", "mm", "a4");
+                        const imgData = canvas.toDataURL("image/png");
+                        const imgW = 190;
+                        const imgH = (canvas.height * imgW) / canvas.width;
+                        let heightLeft = imgH;
+                        let pos = 10;
+                        pdf.addImage(imgData, "PNG", 10, pos, imgW, imgH);
+                        heightLeft -= 277;
+                        while (heightLeft > 0) { pos = heightLeft - imgH + 10; pdf.addPage(); pdf.addImage(imgData, "PNG", 10, pos, imgW, imgH); heightLeft -= 277; }
+                        pdf.save(`cover_letter_${selectedJob?.firm||"draft"}_${new Date().toISOString().slice(0,10)}.pdf`);
+                      } finally { document.body.removeChild(el); }
+                    }}>⬇ Export PDF</button>
+                    <button className="btn btn-outline btn-sm" onClick={() => {
+                      const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><style>body{font-family:'Times New Roman',Times,serif;font-size:11pt;line-height:1.4;color:#000;margin:36px 54px;}</style></head><body><div style="white-space:pre-wrap;">${generatedCL.replace(/\n/g,'<br/>')}</div></body></html>`;
+                      const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a'); a.href = url;
+                      a.download = `cover_letter_${selectedJob?.firm||"draft"}_${new Date().toISOString().slice(0,10)}.doc`;
+                      a.click(); URL.revokeObjectURL(url);
+                    }}>⬇ Export Word</button>
                     <button className="btn btn-ghost btn-sm" style={{marginLeft:"auto"}} onClick={()=>setClStep(1)}>Start New →</button>
                   </div>
                 )}
@@ -3016,23 +3043,37 @@ Format with clear headers.`;
         </div>
       )}
       {tab==="extracted" && (
-        <div className="grid g2 g16">
-          {[
-            {title:"Work Experiences",icon:"💼",count:4,items:["Goldman Sachs — Summer Analyst (2023)","Morgan Stanley — Spring Intern (2022)"]},
-            {title:"Skills",icon:"⚡",count:12,items:["Financial Modeling","DCF / LBO","Bloomberg Terminal","Python (Pandas)"]},
-            {title:"Metrics Library",icon:"📊",count:6,items:["$2.3B deal exposure","+18% efficiency improvement"]},
-            {title:"STAR Stories",icon:"⭐",count:3,items:["Leadership — Restructuring project","Impact — Modeled deal saving $40M"]},
-          ].map(g=>(
-            <div key={g.title} className="card">
-              <div className="card-header"><div className="card-title">{g.icon} {g.title}</div><span className="tag t-gold">{g.count}</span></div>
-              {g.items.map((item,i)=>(
-                <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 0",borderBottom:i<g.items.length-1?"1px solid var(--border2)":"none"}}>
-                  <div className="fs12 t-ink2">{item}</div>
-                  <button className="btn btn-ghost btn-xs">Edit</button>
-                </div>
-              ))}
+        <div>
+          {Object.keys(extractedData).length === 0 ? (
+            <div className="card-tinted" style={{textAlign:"center",padding:"48px"}}>
+              <div style={{fontSize:32,marginBottom:12}}>✨</div>
+              <div style={{fontFamily:"Cormorant Garamond,serif",fontSize:18,fontWeight:700,color:"var(--ink)",marginBottom:8}}>No Extractions Yet</div>
+              <div className="fs12 t-ink3">Upload documents and click "AI Extract" to pull structured data from your CVs, transcripts, and other files.</div>
             </div>
-          ))}
+          ) : (
+            <div className="grid g2 g16">
+              {Object.entries(extractedData).map(([docId, content]) => {
+                const doc = docs.find(d => d.id === docId);
+                if (!doc) return null;
+                return (
+                  <div key={docId} className="card">
+                    <div className="card-header">
+                      <div className="card-title">✨ {doc.filename}</div>
+                      <div className="flex g8">
+                        <button className="btn btn-outline btn-xs" onClick={()=>navigator.clipboard.writeText(content)}>📋 Copy</button>
+                        <button className="btn btn-outline btn-xs" onClick={()=>exportToText(content, `extract_${doc.filename}`)}>⬇ Export</button>
+                      </div>
+                    </div>
+                    <div style={{fontSize:12,lineHeight:1.7,color:"var(--ink2)",whiteSpace:"pre-wrap",maxHeight:300,overflowY:"auto"}}>
+                      {content.split('\n').slice(0,15).map((line, i) => (
+                        <div key={i} style={{marginBottom:2}} dangerouslySetInnerHTML={{__html:line.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--ink)">$1</strong>')}}/>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
       {tab==="search" && (

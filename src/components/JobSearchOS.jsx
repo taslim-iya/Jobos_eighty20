@@ -2326,12 +2326,55 @@ function Pipeline({ jobs }) {
 ══════════════════════════════════════════════════════════════════════════════ */
 function Interview() {
   const [tab, setTab] = useState("practice");
+  const [selectedTrack, setSelectedTrack] = useState("ib");
+  const [selectedLevel, setSelectedLevel] = useState("undergrad");
+  const [selectedCategory, setSelectedCategory] = useState("All");
+  const [currentQ, setCurrentQ] = useState(null);
   const [messages, setMessages] = useState([
-    { role:"ai", text:"Welcome to your IB Interview Prep session. Let's work through core technical questions for the Goldman Sachs Analyst role.\n\nFirst question: **Walk me through a DCF analysis.**\n\nStructure your answer clearly, then I'll score it across four dimensions." },
+    { role:"ai", text:"Welcome to Interview Prep. Select a track and category, then pick a question to practice — or let AI generate fresh ones." },
   ]);
   const [input, setInput] = useState("");
   const [scores, setScores] = useState(null);
   const [answering, setAnswering] = useState(false);
+  const [generatedQs, setGeneratedQs] = useState([]);
+  const [generating, setGenerating] = useState(false);
+
+  // Get questions from templates
+  const templateQuestions = PLAYBOOKS[selectedTrack]?.[selectedLevel]?.questions || [];
+  const allQuestions = [...templateQuestions, ...generatedQs];
+  const categories = ["All", ...new Set(allQuestions.map(q => q.cat))];
+  const filteredQuestions = selectedCategory === "All" ? allQuestions : allQuestions.filter(q => q.cat === selectedCategory);
+
+  const generateQuestions = async () => {
+    setGenerating(true);
+    const trackName = PLAYBOOKS[selectedTrack]?.name || "Investment Banking";
+    const levelLabel = selectedLevel === "undergrad" ? "undergraduate/entry-level" : "experienced hire/lateral";
+    const prompt = `Generate 6 unique interview questions for ${trackName} (${levelLabel}).
+
+Include a mix of categories:
+${selectedTrack === "ib" ? "- Technical (DCF, LBO, M&A, Accounting)\n- Behavioral (leadership, teamwork, fit)\n- Market/Deals (current events, deal analysis)" :
+  selectedTrack === "consulting" ? "- Case Study (profitability, market entry, M&A)\n- Market Sizing (estimation questions)\n- Behavioral (leadership, impact, fit)" :
+  "- Product Design (new product, improvement)\n- Metrics/Analytics (data-driven decisions)\n- Leadership (cross-functional, strategy)"}
+
+Return ONLY a JSON array: [{"q":"...","cat":"...","diff":"Core or Advanced"}]`;
+    try {
+      const result = await callClaude(prompt, "Return only a valid JSON array.", true);
+      const clean = result.replace(/```json|```/g, "").trim();
+      const start = clean.indexOf("["); const end = clean.lastIndexOf("]") + 1;
+      if (start >= 0) {
+        const parsed = JSON.parse(clean.slice(start, end));
+        setGeneratedQs(prev => [...prev, ...parsed]);
+      }
+    } catch (e) { console.error("Failed to generate questions:", e); }
+    setGenerating(false);
+  };
+
+  const startPractice = (q) => {
+    setCurrentQ(q);
+    setScores(null);
+    setMessages([{ role:"ai", text:`**Question:** ${q.q}\n\n*Category: ${q.cat} · Difficulty: ${q.diff}*\n\nTake your time to structure your answer, then submit below.` }]);
+    setTab("practice");
+  };
 
   const submitAnswer = async () => {
     if (!input.trim() || answering) return;
@@ -2339,19 +2382,18 @@ function Interview() {
     setInput("");
     setAnswering(true);
     setMessages(prev => [...prev, { role:"user", text:ans }]);
-    const prompt = `You are an IB interview coach. The candidate answered a DCF question with: "${ans}"
-    
-Score their answer and provide feedback. Format your response as:
+    const trackName = PLAYBOOKS[selectedTrack]?.name || "Investment Banking";
+    const prompt = `You are a ${trackName} interview coach. The candidate was asked: "${currentQ?.q || "a technical question"}"
 
+Their answer: "${ans}"
+
+Score their answer and provide feedback. Format:
 **Assessment:** [1-2 sentence summary]
-
 **Strengths:** [what they did well]
+**Improvement:** [what's missing]
+**Model Answer Ending:** [how a top candidate would close]
 
-**Improvement:** [what's missing or could be stronger]
-
-**Model Answer Ending:** [how a top candidate would close the answer]
-
-Keep it under 150 words. Be specific and direct.`;
+Keep under 150 words. Be specific and direct.`;
     const result = await callClaude(prompt);
     setMessages(prev => [...prev, { role:"ai", text:result }]);
     setScores({ structure: Math.floor(Math.random()*20)+72, relevance: Math.floor(Math.random()*15)+80, specificity: Math.floor(Math.random()*25)+68, concision: Math.floor(Math.random()*18)+76 });
@@ -2374,8 +2416,8 @@ Keep it under 150 words. Be specific and direct.`;
           <div>
             <div className="card mb16">
               <div className="card-header">
-                <div><div className="card-title">IB Technical Core</div><div className="card-subtitle">Goldman Sachs · Analyst Level</div></div>
-                <span className="tag t-green">Live</span>
+                <div><div className="card-title">{currentQ ? currentQ.cat : "Select a Question"}</div><div className="card-subtitle">{PLAYBOOKS[selectedTrack]?.name} · {selectedLevel === "undergrad" ? "Undergrad" : "Experienced"}</div></div>
+                {currentQ && <span className={`tag t-${currentQ.diff==="Advanced"?"gold":"green"}`}>{currentQ.diff}</span>}
               </div>
               <div className="chat-wrap">
                 <div className="chat-msgs">
@@ -2399,10 +2441,10 @@ Keep it under 150 words. Be specific and direct.`;
                   </div>
                 )}
                 <div className="chat-input-row">
-                  <input className="input flex-1" placeholder="Type your answer..." value={input}
-                    onChange={e=>setInput(e.target.value)}
+                  <input className="input flex-1" placeholder={currentQ ? "Type your answer..." : "Select a question from the Question Bank tab..."} value={input}
+                    onChange={e=>setInput(e.target.value)} disabled={!currentQ}
                     onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&submitAnswer()}/>
-                  <button className="btn btn-primary btn-sm" onClick={submitAnswer} disabled={answering}>Submit →</button>
+                  <button className="btn btn-primary btn-sm" onClick={submitAnswer} disabled={answering || !currentQ}>Submit →</button>
                 </div>
               </div>
             </div>
@@ -2410,26 +2452,35 @@ Keep it under 150 words. Be specific and direct.`;
           <div>
             <div className="card mb16">
               <div className="card-header"><div className="card-title">Session Config</div></div>
-              <div className="fg"><label className="label">Playbook</label><select className="input"><option>IB — Undergrad</option><option>Consulting</option><option>Product</option></select></div>
-              <div className="fg"><label className="label">Category</label><select className="input"><option>Technical Core</option><option>Behavioral</option><option>Market/Deals</option></select></div>
-              <div className="fg">
-                <label className="label">Mode</label>
-                <div className="flex g8">
-                  <button className="btn btn-primary btn-sm flex-1">Text</button>
-                  <button className="btn btn-outline btn-sm flex-1">🎙 Voice</button>
-                </div>
+              <div className="fg"><label className="label">Track</label>
+                <select className="input" value={selectedTrack} onChange={e=>{setSelectedTrack(e.target.value);setGeneratedQs([]);}}>
+                  {Object.entries(PLAYBOOKS).map(([k,p])=><option key={k} value={k}>{p.name}</option>)}
+                </select>
               </div>
-              <button className="btn btn-primary w-full">Start New Session</button>
+              <div className="fg"><label className="label">Level</label>
+                <select className="input" value={selectedLevel} onChange={e=>{setSelectedLevel(e.target.value);setGeneratedQs([]);}}>
+                  <option value="undergrad">Undergraduate</option><option value="experienced">Experienced Hire</option>
+                </select>
+              </div>
+              <div className="fg"><label className="label">Category</label>
+                <select className="input" value={selectedCategory} onChange={e=>setSelectedCategory(e.target.value)}>
+                  {categories.map(c=><option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <button className="btn btn-primary w-full mb8" onClick={()=>{if(filteredQuestions.length>0){const r=filteredQuestions[Math.floor(Math.random()*filteredQuestions.length)];startPractice(r);}}}>
+                🎲 Random Question
+              </button>
+              <button className="btn btn-outline w-full" onClick={generateQuestions} disabled={generating}>
+                {generating ? "⏳ Generating..." : "✨ AI Generate New Questions"}
+              </button>
             </div>
             <div className="card">
-              <div className="card-title mb16">Progress</div>
-              {[{cat:"Technical",done:34,total:80,score:82},{cat:"Behavioral",done:18,total:40,score:88},{cat:"Market",done:8,total:30,score:71}].map(p=>(
-                <div key={p.cat} className="mb14">
-                  <div className="flex j-between mb4">
-                    <div className="fs12">{p.cat}</div>
-                    <div className="flex g12"><span className="mono fs11 t-ink3">{p.done}/{p.total}</span><span className="mono fs11" style={{color:"var(--green)"}}>{p.score} avg</span></div>
-                  </div>
-                  <div className="prog-track"><div className="prog-fill g" style={{width:`${(p.done/p.total)*100}%`}}/></div>
+              <div className="card-title mb16">Quick Pick</div>
+              {filteredQuestions.slice(0,5).map((q,i)=>(
+                <div key={i} onClick={()=>startPractice(q)} style={{padding:"10px 0",borderBottom:i<4?"1px solid var(--border2)":"none",cursor:"pointer",transition:"all .12s"}}
+                  onMouseEnter={e=>e.currentTarget.style.paddingLeft="8px"} onMouseLeave={e=>e.currentTarget.style.paddingLeft="0"}>
+                  <div className="fs12 fw5" style={{color:"var(--ink)",marginBottom:3}}>{q.q}</div>
+                  <div className="flex g8"><span className="tag t-blue">{q.cat}</span><span className={`tag t-${q.diff==="Advanced"?"gold":"green"}`}>{q.diff}</span></div>
                 </div>
               ))}
             </div>
@@ -2438,28 +2489,40 @@ Keep it under 150 words. Be specific and direct.`;
       )}
 
       {tab === "question bank" && (
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">Question Bank</div>
-            <div className="flex g10">
-              <select className="input" style={{width:160}}><option>IB — Undergrad</option></select>
-              <select className="input" style={{width:140}}><option>All Categories</option></select>
-            </div>
+        <div>
+          <div className="flex g10 mb16 items-c">
+            <select className="input" style={{width:180}} value={selectedTrack} onChange={e=>{setSelectedTrack(e.target.value);setGeneratedQs([]);}}>
+              {Object.entries(PLAYBOOKS).map(([k,p])=><option key={k} value={k}>{p.name}</option>)}
+            </select>
+            <select className="input" style={{width:160}} value={selectedLevel} onChange={e=>{setSelectedLevel(e.target.value);setGeneratedQs([]);}}>
+              <option value="undergrad">Undergraduate</option><option value="experienced">Experienced</option>
+            </select>
+            <select className="input" style={{width:160}} value={selectedCategory} onChange={e=>setSelectedCategory(e.target.value)}>
+              {categories.map(c=><option key={c} value={c}>{c}</option>)}
+            </select>
+            <button className="btn btn-primary btn-sm" onClick={generateQuestions} disabled={generating}>
+              {generating ? "⏳ Generating..." : "✨ Generate More"}
+            </button>
+            <span className="tag t-gold" style={{marginLeft:"auto"}}>{filteredQuestions.length} questions</span>
           </div>
-          <table className="table">
-            <thead><tr><th>Question</th><th>Category</th><th>Level</th><th>Avg Score</th><th>Actions</th></tr></thead>
-            <tbody>
-              {Object.values(PLAYBOOKS).flatMap(pb=>Object.values(pb).filter(v=>v.questions).flatMap(v=>v.questions||[])).map((q,i)=>(
-                <tr key={i}>
-                  <td style={{maxWidth:380,color:"var(--ink)"}}>{q.q}</td>
-                  <td><span className="tag t-blue">{q.cat}</span></td>
-                  <td><span className={`tag t-${q.diff==="Advanced"?"gold":"green"}`}>{q.diff}</span></td>
-                  <td><span className="mono" style={{color:"var(--green)",fontSize:12}}>{Math.floor(Math.random()*25)+70}</span></td>
-                  <td><button className="btn btn-primary btn-xs">Practice →</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {generating && <div className="ai-pulse mb16"><div className="dot-spin"/>Generating questions for {PLAYBOOKS[selectedTrack]?.name}...</div>}
+          <div className="card">
+            <div className="card-header"><div className="card-title">Question Bank</div></div>
+            <table className="table">
+              <thead><tr><th>Question</th><th>Category</th><th>Level</th><th>Source</th><th>Actions</th></tr></thead>
+              <tbody>
+                {filteredQuestions.map((q,i)=>(
+                  <tr key={i}>
+                    <td style={{maxWidth:380,color:"var(--ink)"}}>{q.q}</td>
+                    <td><span className="tag t-blue">{q.cat}</span></td>
+                    <td><span className={`tag t-${q.diff==="Advanced"?"gold":"green"}`}>{q.diff}</span></td>
+                    <td><span className={`tag t-${i < templateQuestions.length ? "navy" : "ink"}`}>{i < templateQuestions.length ? "Template" : "AI Generated"}</span></td>
+                    <td><button className="btn btn-primary btn-xs" onClick={()=>startPractice(q)}>Practice →</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -2880,113 +2943,26 @@ const OUTREACH_DATA = [
   { name:"James Park", firm:"Meta", role:"GPM", ch:"LinkedIn", status:"replied", date:"Feb 12", seq:"Cold S3" },
 ];
 function Outreach() {
-  const [tab, setTab] = useState("queue");
-  const sc = {replied:"green",sent:"navy",pending:"gold",bounced:"red"};
   return (
     <div className="page">
-      <div className="section-header">
-        <div><div className="eyebrow">Outreach Engine</div><div className="section-title">Sequences & Analytics</div></div>
-        <div className="flex g10"><button className="btn btn-outline btn-sm" onClick={()=>{const d=OUTREACH_DATA.map(o=>({Name:o.name,Firm:o.firm,Role:o.role,Channel:o.ch,Status:o.status,Date:o.date,Step:o.seq}));exportToCSV(d,"outreach_contacts");}}>⬇ Export CSV</button><button className="btn btn-primary btn-sm">+ Add Contact</button></div>
-      </div>
-      <div className="grid g4 mb20">
-        {[{l:"Total Sent",v:"47",d:"+12 this week",up:true},{l:"Reply Rate",v:"34%",d:"+8pp",up:true},{l:"Meetings",v:"6",d:"+2",up:true},{l:"Pending",v:"11"}].map(k=>(
-          <div key={k.l} className="kpi"><div className="kpi-label">{k.l}</div><div className="kpi-val">{k.v}</div>{k.d&&<div className={`kpi-delta ${k.up?"up":""}`}>{k.up?"▲":""} {k.d}</div>}</div>
-        ))}
-      </div>
-      <div className="tabs">
-        {["queue","sequences","contacts","analytics"].map(t=>(
-          <div key={t} className={`tab ${tab===t?"active":""}`} onClick={()=>setTab(t)} style={{textTransform:"capitalize"}}>{t}</div>
-        ))}
-      </div>
-      {tab==="queue" && (
-        <div className="card">
-          <div className="card-header"><div className="card-title">Outreach Queue</div><span className="tag t-gold">5 contacts</span></div>
-          <table className="table">
-            <thead><tr><th>Contact</th><th>Firm</th><th>Role</th><th>Channel</th><th>Step</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
-            <tbody>
-              {OUTREACH_DATA.map((o,i)=>(
-                <tr key={i}>
-                  <td className="fw6" style={{color:"var(--ink)"}}>{o.name}</td>
-                  <td>{o.firm}</td>
-                  <td className="fs12 t-ink3">{o.role}</td>
-                  <td><span className={`tag t-${o.ch==="Email"?"blue":"ink"}`}>{o.ch}</span></td>
-                  <td className="mono fs11">{o.seq}</td>
-                  <td><span className={`tag t-${sc[o.status]||"ink"}`}>{o.status}</span></td>
-                  <td className="mono fs11">{o.date}</td>
-                  <td><div className="flex g8"><button className="btn btn-outline btn-xs">Draft</button><button className="btn btn-ghost btn-xs">📋 Copy</button></div></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <div className="coming-box">
+        <div className="coming-icon">✉️</div>
+        <span className="tag t-gold" style={{marginBottom:14,display:"inline-block"}}>Coming Soon</span>
+        <div className="coming-title">Outreach Engine</div>
+        <div className="coming-desc">Automated multi-channel outreach sequences, reply tracking, contact CRM, and AI-drafted messages — launching in the next update.</div>
+        <div className="flex g10" style={{justifyContent:"center",marginTop:20}}>
+          <button className="btn btn-gold">Join Waitlist</button>
+          <button className="btn btn-outline">Learn More</button>
         </div>
-      )}
-      {tab==="sequences" && (
-        <div className="grid g3 g16">
-          {[{name:"Cold Outreach",steps:3,desc:"Unknown contacts. Alumni → Generic → Last resort."},{name:"Referral Ask",steps:3,desc:"Warm leads. Intro → Referral ask → Follow-up."},{name:"Recruiter",steps:3,desc:"HR/Campus. App status → Availability → Follow-up."}].map(seq=>(
-            <div key={seq.name} className="card">
-              <div className="card-title mb4">{seq.name}</div>
-              <div className="fs12 t-ink3 mb16">{seq.desc}</div>
-              {Array.from({length:seq.steps},(_,i)=>(
-                <div key={i} style={{display:"flex",gap:12,padding:"12px 14px",background:"var(--surface2)",border:"1px solid var(--border2)",borderRadius:8,marginBottom:8}}>
-                  <div style={{width:24,height:24,borderRadius:"50%",background:"var(--navy2)",color:"white",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"JetBrains Mono,monospace",fontSize:10,fontWeight:600,flexShrink:0}}>S{i+1}</div>
-                  <div>
-                    <div className="fw5 fs12" style={{color:"var(--ink)",marginBottom:2}}>{i===0?"Initial Contact":i===1?"Follow-Up (D+5)":"Final Touch (D+12)"}</div>
-                    <div className="fs11 t-ink4">{i===0?"Personalised intro + specific ask":i===1?"Reference first msg + value add":"Light nudge + alternative CTA"}</div>
-                  </div>
-                </div>
-              ))}
-              <button className="btn btn-primary btn-sm w-full mt8">✨ AI Generate Messages</button>
+        <div className="grid g3 mt20" style={{maxWidth:480,margin:"20px auto 0"}}>
+          {[{l:"Email Sequences",d:"3-step cold outreach with auto follow-ups"},{l:"LinkedIn DMs",d:"Personalised connection + value-add templates"},{l:"Reply Analytics",d:"Track open, reply, and meeting rates"}].map(f=>(
+            <div key={f.l} style={{background:"var(--surface2)",border:"1px solid var(--border2)",borderRadius:10,padding:"16px 14px",textAlign:"left"}}>
+              <div className="fw6 fs12" style={{color:"var(--ink)",marginBottom:4}}>{f.l}</div>
+              <div className="fs11 t-ink3" style={{lineHeight:1.5}}>{f.d}</div>
             </div>
           ))}
         </div>
-      )}
-      {tab==="contacts" && (
-        <div className="card">
-          <div className="card-header"><div className="card-title">Contact List</div><input className="input" placeholder="Search..." style={{width:200}}/></div>
-          <table className="table">
-            <thead><tr><th>Name</th><th>Firm</th><th>Role</th><th>Track</th><th>Touchpoints</th><th>Last Contact</th><th>Actions</th></tr></thead>
-            <tbody>{OUTREACH_DATA.map((o,i)=>(
-              <tr key={i}>
-                <td className="fw6" style={{color:"var(--ink)"}}>{o.name}</td>
-                <td>{o.firm}</td>
-                <td className="fs12 t-ink3">{o.role}</td>
-                <td><span className="tag t-navy">IB</span></td>
-                <td className="mono fs11">{Math.floor(Math.random()*3)+1}</td>
-                <td className="mono fs11">{o.date}</td>
-                <td><button className="btn btn-outline btn-xs">View</button></td>
-              </tr>
-            ))}</tbody>
-          </table>
-        </div>
-      )}
-      {tab==="analytics" && (
-        <div className="grid g2 g16">
-          <div className="card">
-            <div className="card-title mb16">Reply Rate by Template</div>
-            {[{n:"alumni-coffee-v3",r:48},{n:"cold-ib-v2",r:31},{n:"referral-warm-v1",r:62},{n:"recruiter-v4",r:28}].map(t=>(
-              <div key={t.n} className="mb12">
-                <div className="flex j-between mb4"><div className="mono fs11">{t.n}</div><div className="mono fs11" style={{color:t.r>45?"var(--green)":"var(--ink2)"}}>{t.r}%</div></div>
-                <div className="prog-track"><div className={`prog-fill ${t.r>45?"g":"n"}`} style={{width:`${t.r*1.5}%`}}/></div>
-              </div>
-            ))}
-          </div>
-          <div className="card">
-            <div className="card-title mb16">Channel Performance</div>
-            {[{ch:"Email",sent:28,replied:11,r:39},{ch:"LinkedIn DM",sent:19,replied:5,r:26}].map(c=>(
-              <div key={c.ch} style={{background:"var(--surface2)",borderRadius:10,padding:"16px",marginBottom:12,border:"1px solid var(--border2)"}}>
-                <div className="flex j-between items-c mb10">
-                  <div style={{fontFamily:"Cormorant Garamond,serif",fontSize:16,fontWeight:700,color:"var(--ink)"}}>{c.ch}</div>
-                  <span className="mono fw6" style={{fontSize:18,color:c.r>35?"var(--green)":"var(--gold)"}}>{c.r}%</span>
-                </div>
-                <div className="flex g20">
-                  <div><div className="kpi-label">Sent</div><div className="mono fw6 fs12">{c.sent}</div></div>
-                  <div><div className="kpi-label">Replied</div><div className="mono fw6 fs12">{c.replied}</div></div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }

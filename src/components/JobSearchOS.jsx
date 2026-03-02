@@ -3,7 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { fetchJobs, upsertJob, deleteJob, fetchDocuments, upsertDocument, deleteDocument, uploadFile, deleteFile, exportToCSV, exportToText, fetchWebsites, upsertWebsite, deleteWebsite } from "@/lib/database";
 import { supabase } from "@/integrations/supabase/client";
 import { jsPDF } from "jspdf";
-import html2canvas from "html2canvas";
+// html2canvas removed — using jsPDF native text rendering for small file sizes
 
 /* ─────────────────────────────────────────────────────────────────────────────
    DESIGN SYSTEM — "FT Editorial Light"
@@ -2022,75 +2022,124 @@ Return the full tailored CV text only, no commentary.`;
 
   const stepClass = (n) => n < clStep ? "step-done" : n === clStep ? "step-active" : "step-inactive";
 
-  // Build IB-style HTML for CV export (matches standard IB resume formatting)
-  const buildIBStyledHTML = (text) => {
-    const lines = text.split("\n").filter(l => l.trim());
-    let html = "";
-    const sectionHeaders = ["education","professional experience","extracurricular activities","additional information","work experience","experience","leadership","skills","interests","certifications","awards","contact details"];
-    
+  // ── Text-based PDF export (small file, crisp text, proper alignment) ──
+  const exportPDF = (content, filename) => {
+    if (!content) return;
+    const pdf = new jsPDF("p", "mm", "a4");
+    const margin = { top: 25, left: 25, right: 25, bottom: 20 };
+    const pageW = 210 - margin.left - margin.right;
+    const pageH = 297 - margin.top - margin.bottom;
+
+    const lines = content.split("\n");
+    const sectionHeaders = ["education","professional experience","extracurricular activities","additional information","work experience","experience","leadership","skills","interests","certifications","awards","contact details","projects","summary","objective"];
+
+    let y = margin.top;
     let nameDetected = false;
-    
+
+    const addPage = () => { pdf.addPage(); y = margin.top; };
+    const checkPage = (needed) => { if (y + needed > margin.top + pageH) addPage(); };
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
+      if (!line) { y += 2; continue; }
       const lower = line.toLowerCase();
-      
-      // First non-contact line = name (centered, bold, larger)
-      if (!nameDetected && i < 3 && !line.startsWith("-") && !line.startsWith("•")) {
-        if (lower.includes("@") || lower.startsWith("m:") || lower.startsWith("+") || lower.match(/^\d/)) {
-          html += `<div style="text-align:center;font-size:10pt;margin:1px 0;">${line}</div>`;
-        } else if (sectionHeaders.some(h => lower === h || lower.startsWith(h))) {
-          html += `<div style="font-weight:bold;text-decoration:underline;font-size:11pt;margin-top:10px;margin-bottom:3px;border-bottom:1px solid #000;padding-bottom:1px;">${line}</div>`;
+      const isSectionHeader = sectionHeaders.some(h => lower === h || lower.startsWith(h + " "));
+      const isBullet = /^[-•□▪►▸●◦]\s*/.test(line);
+      const dateMatch = line.match(/((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{4}.*$|\d{4}\s*[-–—]\s*(?:\d{4}|Present|Current))/i);
+
+      // Name (first non-contact line)
+      if (!nameDetected && i < 3 && !isBullet) {
+        if (lower.includes("@") || lower.startsWith("m:") || lower.startsWith("+") || /^\d/.test(lower)) {
+          checkPage(5);
+          pdf.setFont("times", "normal"); pdf.setFontSize(10);
+          pdf.text(line, 105, y, { align: "center" }); y += 4;
+        } else if (isSectionHeader) {
           nameDetected = true;
+          checkPage(8);
+          pdf.setFont("times", "bold"); pdf.setFontSize(11);
+          pdf.text(line.toUpperCase(), margin.left, y);
+          y += 1;
+          pdf.setDrawColor(0); pdf.setLineWidth(0.4);
+          pdf.line(margin.left, y, margin.left + pageW, y);
+          y += 5;
         } else {
-          html += `<div style="text-align:center;font-weight:bold;font-size:14pt;margin-bottom:2px;">${line}</div>`;
+          pdf.setFont("times", "bold"); pdf.setFontSize(14);
+          pdf.text(line, 105, y, { align: "center" }); y += 5;
           nameDetected = true;
         }
         continue;
       }
-      
-      // Contact details (phone, email near top)
-      if (i < 6 && (lower.includes("@") || lower.startsWith("m:") || lower.startsWith("+") || lower === "contact details")) {
-        const isBold = lower === "contact details";
-        html += `<div style="text-align:center;${isBold ? "font-weight:bold;" : ""}font-size:10pt;margin:1px 0;">${line}</div>`;
+
+      // Contact lines near top
+      if (i < 6 && (lower.includes("@") || lower.startsWith("m:") || lower.startsWith("+"))) {
+        checkPage(5);
+        pdf.setFont("times", "normal"); pdf.setFontSize(10);
+        pdf.text(line, 105, y, { align: "center" }); y += 4;
         continue;
       }
-      
-      // Section headers (bold + underline + bottom border)
-      if (sectionHeaders.some(h => lower === h || lower.startsWith(h))) {
-        html += `<div style="font-weight:bold;text-decoration:underline;font-size:11pt;margin-top:10px;margin-bottom:3px;border-bottom:1px solid #000;padding-bottom:1px;">${line}</div>`;
+
+      // Section headers
+      if (isSectionHeader) {
+        checkPage(10);
+        y += 3;
+        pdf.setFont("times", "bold"); pdf.setFontSize(11);
+        pdf.text(line.toUpperCase(), margin.left, y);
+        y += 1;
+        pdf.setDrawColor(0); pdf.setLineWidth(0.4);
+        pdf.line(margin.left, y, margin.left + pageW, y);
+        y += 5;
         continue;
       }
-      
-      // Bullet points (square bullet, indented)
-      if (line.startsWith("-") || line.startsWith("•") || line.startsWith("□") || line.startsWith("▪")) {
-        const bullet = line.replace(/^[-•□▪]\s*/, "");
-        html += `<div style="margin-left:18px;text-indent:-12px;font-size:10pt;margin-top:1px;">▪ ${bullet}</div>`;
+
+      // Bullet points
+      if (isBullet) {
+        const bullet = line.replace(/^[-•□▪►▸●◦]\s*/, "");
+        pdf.setFont("times", "normal"); pdf.setFontSize(10);
+        const wrapped = pdf.splitTextToSize(bullet, pageW - 8);
+        checkPage(wrapped.length * 4 + 1);
+        pdf.text("▪", margin.left + 3, y);
+        pdf.text(wrapped, margin.left + 8, y);
+        y += wrapped.length * 4 + 1;
         continue;
       }
-      
-      // Lines with dates → company/org line (bold left, date right)
-      const dateMatch = line.match(/((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{4}.*$|\d{4}\s*[-–]\s*(?:\d{4}|Present|Current))/i);
+
+      // Lines with dates → company/role line
       if (dateMatch) {
-        const dateStr = dateMatch[0];
-        const mainText = line.replace(dateStr, "").replace(/[,\s]+$/, "").trim();
+        const dateStr = dateMatch[0].trim();
+        const mainText = line.replace(dateStr, "").replace(/[,|·\s]+$/, "").trim();
+        checkPage(6);
         if (mainText.length > 2) {
-          html += `<div style="display:flex;justify-content:space-between;font-weight:bold;font-size:10pt;margin-top:6px;"><span>${mainText}</span><span style="font-weight:normal;white-space:nowrap;">${dateStr.trim()}</span></div>`;
+          pdf.setFont("times", "bold"); pdf.setFontSize(10);
+          pdf.text(mainText, margin.left, y);
+          pdf.setFont("times", "normal");
+          pdf.text(dateStr, margin.left + pageW, y, { align: "right" });
         } else {
-          html += `<div style="text-align:right;font-size:10pt;">${dateStr.trim()}</div>`;
+          pdf.setFont("times", "normal"); pdf.setFontSize(10);
+          pdf.text(dateStr, margin.left + pageW, y, { align: "right" });
         }
+        y += 5;
         continue;
       }
-      
-      // Short lines without periods = role/title (bold)
+
+      // Short lines without periods → sub-header/title
       if (line.length < 80 && !line.includes(".") && i > 3) {
-        html += `<div style="font-weight:bold;font-size:10pt;margin-top:1px;">${line}</div>`;
+        checkPage(6);
+        pdf.setFont("times", "bolditalic"); pdf.setFontSize(10);
+        const wrapped = pdf.splitTextToSize(line, pageW);
+        pdf.text(wrapped, margin.left, y);
+        y += wrapped.length * 4 + 1;
         continue;
       }
-      
+
       // Regular text
-      html += `<div style="font-size:10pt;margin-top:1px;">${line}</div>`;
+      pdf.setFont("times", "normal"); pdf.setFontSize(10);
+      const wrapped = pdf.splitTextToSize(line, pageW);
+      checkPage(wrapped.length * 4 + 1);
+      pdf.text(wrapped, margin.left, y);
+      y += wrapped.length * 4 + 1;
     }
-    return html;
+
+    pdf.save(filename);
   };
 
   return (
@@ -2101,36 +2150,17 @@ Return the full tailored CV text only, no commentary.`;
           <div className="section-title">Build, Tailor & Generate</div>
         </div>
         <div className="flex g10">
-          <button className="btn btn-outline btn-sm" onClick={async () => {
+          <button className="btn btn-outline btn-sm" onClick={() => {
             const content = tab === "cover letter" ? generatedCL : (tailoredCV || cv);
             if (!content) return;
-            const el = document.createElement("div");
-            el.style.cssText = "position:absolute;left:-9999px;top:0;width:794px;padding:36px 54px;font-family:'Times New Roman',Times,serif;font-size:11pt;line-height:1.15;color:#000;background:#fff;";
-            el.innerHTML = buildIBStyledHTML(content);
-            document.body.appendChild(el);
-            try {
-              const canvas = await html2canvas(el, { scale: 3, useCORS: true });
-              const pdf = new jsPDF("p", "mm", "a4");
-              const imgData = canvas.toDataURL("image/png");
-              const imgW = 190;
-              const imgH = (canvas.height * imgW) / canvas.width;
-              let heightLeft = imgH;
-              let pos = 10;
-              pdf.addImage(imgData, "PNG", 10, pos, imgW, imgH);
-              heightLeft -= 277;
-              while (heightLeft > 0) {
-                pos = heightLeft - imgH + 10;
-                pdf.addPage();
-                pdf.addImage(imgData, "PNG", 10, pos, imgW, imgH);
-                heightLeft -= 277;
-              }
-              pdf.save(`${tab === "cover letter" ? "cover_letter" : "cv"}_${new Date().toISOString().slice(0,10)}.pdf`);
-            } finally { document.body.removeChild(el); }
+            const fname = `${tab === "cover letter" ? "cover_letter" : "cv"}_${new Date().toISOString().slice(0,10)}.pdf`;
+            exportPDF(content, fname);
           }}>⬇ Export PDF</button>
           <button className="btn btn-outline btn-sm" onClick={() => {
             const content = tab === "cover letter" ? generatedCL : (tailoredCV || cv);
             if (!content) return;
-            const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><style>body{font-family:'Times New Roman',Times,serif;font-size:11pt;line-height:1.15;color:#000;margin:36px 54px;}</style></head><body>${buildIBStyledHTML(content)}</body></html>`;
+            const htmlBody = content.split("\n").map(l => `<p style="margin:2px 0;">${l || "&nbsp;"}</p>`).join("");
+            const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><style>body{font-family:'Times New Roman',Times,serif;font-size:11pt;line-height:1.15;color:#000;margin:36px 54px;}p{margin:2px 0;}</style></head><body>${htmlBody}</body></html>`;
             const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -2174,9 +2204,23 @@ Return the full tailored CV text only, no commentary.`;
                 <div className="ai-pulse mb12"><div className="dot-spin"/>Extracting text from your CV file...</div>
               )}
               <textarea className="input textarea" style={{minHeight:480,fontFamily:"JetBrains Mono,monospace",fontSize:11.5,lineHeight:1.9,color:"var(--ink2)"}} value={cv} onChange={e=>setCv(e.target.value)} placeholder="Upload a CV file above or paste your CV text here..."/>
-              <div className="flex g8 mt12">
+              <div className="flex g8 mt12 flex-wrap">
                 <button className="btn btn-outline btn-sm" onClick={()=>{navigator.clipboard.writeText(cv);alert("CV saved to clipboard!");}}>Save Draft</button>
                 <button className="btn btn-gold btn-sm" onClick={()=>cvFileRef.current?.click()} disabled={uploading}>📄 Re-upload</button>
+                <button className="btn btn-primary btn-sm" onClick={async () => {
+                  if (!cv.trim()) return;
+                  setUploading(true);
+                  try {
+                    const result = await callClaude(
+                      `Fix and improve this CV. Correct formatting issues, align sections properly, fix typos, improve bullet points with action verbs and metrics where possible. Keep the same content and structure but make it polished and professional for investment banking / consulting applications.\n\nCV:\n${cv}\n\nReturn ONLY the improved CV text, no commentary.`,
+                      "You are a professional CV editor. Return only the cleaned-up CV text."
+                    );
+                    setCv(result);
+                  } catch (err) {
+                    alert("AI fix failed: " + (err.message || "Unknown error"));
+                  }
+                  setUploading(false);
+                }}>🔧 AI Auto-Fix CV</button>
                 <button className="btn btn-primary btn-sm" onClick={()=>setTab("cover letter")}>✨ Write Cover Letter</button>
               </div>
             </div>
@@ -2401,27 +2445,12 @@ Return the full tailored CV text only, no commentary.`;
                 {generatedCL && !generating && (
                   <div className="flex g10 mt12" style={{flexWrap:"wrap"}}>
                     <button className="btn btn-primary" onClick={()=>navigator.clipboard.writeText(generatedCL)}>📋 Copy</button>
-                    <button className="btn btn-outline btn-sm" onClick={async () => {
-                      const el = document.createElement("div");
-                      el.style.cssText = "position:absolute;left:-9999px;top:0;width:794px;padding:36px 54px;font-family:'Times New Roman',Times,serif;font-size:11pt;line-height:1.4;color:#000;background:#fff;";
-                      el.innerHTML = `<div style="font-size:11pt;line-height:1.6;white-space:pre-wrap;">${generatedCL.replace(/\n/g,'<br/>')}</div>`;
-                      document.body.appendChild(el);
-                      try {
-                        const canvas = await html2canvas(el, { scale: 3, useCORS: true });
-                        const pdf = new jsPDF("p", "mm", "a4");
-                        const imgData = canvas.toDataURL("image/png");
-                        const imgW = 190;
-                        const imgH = (canvas.height * imgW) / canvas.width;
-                        let heightLeft = imgH;
-                        let pos = 10;
-                        pdf.addImage(imgData, "PNG", 10, pos, imgW, imgH);
-                        heightLeft -= 277;
-                        while (heightLeft > 0) { pos = heightLeft - imgH + 10; pdf.addPage(); pdf.addImage(imgData, "PNG", 10, pos, imgW, imgH); heightLeft -= 277; }
-                        pdf.save(`cover_letter_${selectedJob?.firm||"draft"}_${new Date().toISOString().slice(0,10)}.pdf`);
-                      } finally { document.body.removeChild(el); }
+                    <button className="btn btn-outline btn-sm" onClick={() => {
+                      exportPDF(generatedCL, `cover_letter_${selectedJob?.firm||"draft"}_${new Date().toISOString().slice(0,10)}.pdf`);
                     }}>⬇ Export PDF</button>
                     <button className="btn btn-outline btn-sm" onClick={() => {
-                      const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><style>body{font-family:'Times New Roman',Times,serif;font-size:11pt;line-height:1.4;color:#000;margin:36px 54px;}</style></head><body><div style="white-space:pre-wrap;">${generatedCL.replace(/\n/g,'<br/>')}</div></body></html>`;
+                      const htmlBody = generatedCL.split("\n").map(l => `<p style="margin:2px 0;">${l || "&nbsp;"}</p>`).join("");
+                      const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><style>body{font-family:'Times New Roman',Times,serif;font-size:11pt;line-height:1.4;color:#000;margin:36px 54px;}p{margin:2px 0;}</style></head><body>${htmlBody}</body></html>`;
                       const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
                       const url = URL.createObjectURL(blob);
                       const a = document.createElement('a'); a.href = url;

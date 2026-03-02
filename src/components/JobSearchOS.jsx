@@ -1904,6 +1904,77 @@ Return the full tailored CV text only, no commentary.`;
 
   const stepClass = (n) => n < clStep ? "step-done" : n === clStep ? "step-active" : "step-inactive";
 
+  // Build IB-style HTML for CV export (matches standard IB resume formatting)
+  const buildIBStyledHTML = (text) => {
+    const lines = text.split("\n").filter(l => l.trim());
+    let html = "";
+    const sectionHeaders = ["education","professional experience","extracurricular activities","additional information","work experience","experience","leadership","skills","interests","certifications","awards","contact details"];
+    
+    let nameDetected = false;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      const lower = line.toLowerCase();
+      
+      // First non-contact line = name (centered, bold, larger)
+      if (!nameDetected && i < 3 && !line.startsWith("-") && !line.startsWith("•")) {
+        if (lower.includes("@") || lower.startsWith("m:") || lower.startsWith("+") || lower.match(/^\d/)) {
+          html += `<div style="text-align:center;font-size:10pt;margin:1px 0;">${line}</div>`;
+        } else if (sectionHeaders.some(h => lower === h || lower.startsWith(h))) {
+          html += `<div style="font-weight:bold;text-decoration:underline;font-size:11pt;margin-top:10px;margin-bottom:3px;border-bottom:1px solid #000;padding-bottom:1px;">${line}</div>`;
+          nameDetected = true;
+        } else {
+          html += `<div style="text-align:center;font-weight:bold;font-size:14pt;margin-bottom:2px;">${line}</div>`;
+          nameDetected = true;
+        }
+        continue;
+      }
+      
+      // Contact details (phone, email near top)
+      if (i < 6 && (lower.includes("@") || lower.startsWith("m:") || lower.startsWith("+") || lower === "contact details")) {
+        const isBold = lower === "contact details";
+        html += `<div style="text-align:center;${isBold ? "font-weight:bold;" : ""}font-size:10pt;margin:1px 0;">${line}</div>`;
+        continue;
+      }
+      
+      // Section headers (bold + underline + bottom border)
+      if (sectionHeaders.some(h => lower === h || lower.startsWith(h))) {
+        html += `<div style="font-weight:bold;text-decoration:underline;font-size:11pt;margin-top:10px;margin-bottom:3px;border-bottom:1px solid #000;padding-bottom:1px;">${line}</div>`;
+        continue;
+      }
+      
+      // Bullet points (square bullet, indented)
+      if (line.startsWith("-") || line.startsWith("•") || line.startsWith("□") || line.startsWith("▪")) {
+        const bullet = line.replace(/^[-•□▪]\s*/, "");
+        html += `<div style="margin-left:18px;text-indent:-12px;font-size:10pt;margin-top:1px;">▪ ${bullet}</div>`;
+        continue;
+      }
+      
+      // Lines with dates → company/org line (bold left, date right)
+      const dateMatch = line.match(/((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{4}.*$|\d{4}\s*[-–]\s*(?:\d{4}|Present|Current))/i);
+      if (dateMatch) {
+        const dateStr = dateMatch[0];
+        const mainText = line.replace(dateStr, "").replace(/[,\s]+$/, "").trim();
+        if (mainText.length > 2) {
+          html += `<div style="display:flex;justify-content:space-between;font-weight:bold;font-size:10pt;margin-top:6px;"><span>${mainText}</span><span style="font-weight:normal;white-space:nowrap;">${dateStr.trim()}</span></div>`;
+        } else {
+          html += `<div style="text-align:right;font-size:10pt;">${dateStr.trim()}</div>`;
+        }
+        continue;
+      }
+      
+      // Short lines without periods = role/title (bold)
+      if (line.length < 80 && !line.includes(".") && i > 3) {
+        html += `<div style="font-weight:bold;font-size:10pt;margin-top:1px;">${line}</div>`;
+        continue;
+      }
+      
+      // Regular text
+      html += `<div style="font-size:10pt;margin-top:1px;">${line}</div>`;
+    }
+    return html;
+  };
+
   return (
     <div className="page">
       <div className="section-header">
@@ -1916,11 +1987,11 @@ Return the full tailored CV text only, no commentary.`;
             const content = tab === "cover letter" ? generatedCL : (tailoredCV || cv);
             if (!content) return;
             const el = document.createElement("div");
-            el.style.cssText = "position:absolute;left:-9999px;top:0;width:794px;padding:48px 56px;font-family:Cormorant Garamond,serif;font-size:13px;line-height:1.8;color:#1a1a1a;background:#fff;white-space:pre-wrap;";
-            el.innerText = content;
+            el.style.cssText = "position:absolute;left:-9999px;top:0;width:794px;padding:36px 54px;font-family:'Times New Roman',Times,serif;font-size:11pt;line-height:1.15;color:#000;background:#fff;";
+            el.innerHTML = buildIBStyledHTML(content);
             document.body.appendChild(el);
             try {
-              const canvas = await html2canvas(el, { scale: 2, useCORS: true });
+              const canvas = await html2canvas(el, { scale: 3, useCORS: true });
               const pdf = new jsPDF("p", "mm", "a4");
               const imgData = canvas.toDataURL("image/png");
               const imgW = 190;
@@ -1938,6 +2009,18 @@ Return the full tailored CV text only, no commentary.`;
               pdf.save(`${tab === "cover letter" ? "cover_letter" : "cv"}_${new Date().toISOString().slice(0,10)}.pdf`);
             } finally { document.body.removeChild(el); }
           }}>⬇ Export PDF</button>
+          <button className="btn btn-outline btn-sm" onClick={() => {
+            const content = tab === "cover letter" ? generatedCL : (tailoredCV || cv);
+            if (!content) return;
+            const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><style>body{font-family:'Times New Roman',Times,serif;font-size:11pt;line-height:1.15;color:#000;margin:36px 54px;}</style></head><body>${buildIBStyledHTML(content)}</body></html>`;
+            const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${tab === "cover letter" ? "cover_letter" : "cv"}_${new Date().toISOString().slice(0,10)}.doc`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }}>⬇ Export Word</button>
           <button className="btn btn-primary btn-sm" onClick={()=>setTab("cover letter")}>✨ Write Cover Letter</button>
         </div>
       </div>

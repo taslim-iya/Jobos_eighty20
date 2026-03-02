@@ -3508,8 +3508,8 @@ function Admin() {
     setScrapeRunning(true);
     setScrapeResult(null);
     try {
-      const { data, error } = await supabase.functions.invoke("admin-scrape");
-      if (error) throw error;
+      const { data, error } = await supabase.functions.invoke("admin-scrape", { body: {} });
+      if (error) throw new Error(error.message || JSON.stringify(error));
       setScrapeResult(data);
     } catch (err) {
       setScrapeResult({ error: err.message || "Scrape failed" });

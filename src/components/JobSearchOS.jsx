@@ -1459,10 +1459,17 @@ Find 3-5 real, current job postings. Include actual firm names and realistic det
         const end = clean.lastIndexOf("]") + 1;
         const parsed = JSON.parse(clean.slice(start, end));
         const withId = parsed.map((j, i) => ({
-          ...j, id: 200 + i, track: trackFilter, level: levelFilter, saved: false,
+          ...j, id: 200 + Date.now() + i, track: trackFilter, level: levelFilter, saved: false,
+          source: "AI Search",
           tags: j.tags || [trackFilter === "ib" ? "IB" : trackFilter === "consulting" ? "Consulting" : "Product"],
         }));
         setAiResults(withId);
+        // Also merge into discovery list so they appear in recommended/all tabs
+        setDiscJobs(prev => {
+          const existingTitles = new Set(prev.map(j => j.title + j.firm));
+          const newJobs = withId.filter(j => !existingTitles.has(j.title + j.firm));
+          return [...newJobs, ...prev];
+        });
       } catch {
         setAiResults([{
           id: 200, title: "Results parsed from AI search", firm: "Multiple firms",
@@ -1906,7 +1913,7 @@ Return the full tailored CV text only, no commentary.`;
         </div>
         <div className="flex g10">
           <button className="btn btn-outline btn-sm" onClick={async () => {
-            const content = tab === "cover letter" ? coverLetter : (tailoredCV || cv);
+            const content = tab === "cover letter" ? generatedCL : (tailoredCV || cv);
             if (!content) return;
             const el = document.createElement("div");
             el.style.cssText = "position:absolute;left:-9999px;top:0;width:794px;padding:48px 56px;font-family:Cormorant Garamond,serif;font-size:13px;line-height:1.8;color:#1a1a1a;background:#fff;white-space:pre-wrap;";
@@ -1951,7 +1958,7 @@ Return the full tailored CV text only, no commentary.`;
               </div>
               <textarea className="input textarea" style={{minHeight:480,fontFamily:"JetBrains Mono,monospace",fontSize:11.5,lineHeight:1.9,color:"var(--ink2)"}} value={cv} onChange={e=>setCv(e.target.value)}/>
               <div className="flex g8 mt12">
-                <button className="btn btn-outline btn-sm">Save Draft</button>
+                <button className="btn btn-outline btn-sm" onClick={()=>{navigator.clipboard.writeText(cv);alert("CV saved to clipboard!");}}>Save Draft</button>
                 <button className="btn btn-primary btn-sm" onClick={()=>setTab("cover letter")}>✨ Write Cover Letter</button>
               </div>
             </div>

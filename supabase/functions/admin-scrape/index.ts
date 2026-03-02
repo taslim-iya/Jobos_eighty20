@@ -192,6 +192,7 @@ Deno.serve(async (req) => {
           location: j.location,
           description: j.description,
           source: j.source,
+          url: j.url,
         }));
 
         const { error: insertErr } = await admin.from("jobs").insert(inserts);

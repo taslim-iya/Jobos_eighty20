@@ -1235,6 +1235,62 @@ async function callClaude(prompt, systemPrompt = "", useWebSearch = false) {
   return data.content || "No response";
 }
 
+async function crawlJobs({ query = "", track = "", level = "", location = "", siteUrl = "" } = {}) {
+  const { data, error } = await supabase.functions.invoke("job-crawl-search", {
+    body: {
+      query,
+      track,
+      level,
+      location,
+      siteUrl,
+    },
+  });
+
+  if (error) {
+    throw new Error(error.message || "Crawler search failed");
+  }
+
+  return Array.isArray(data?.jobs) ? data.jobs : [];
+}
+
+function isExpiredDeadline(deadline) {
+  if (!deadline) return false;
+  const lower = String(deadline).toLowerCase();
+  if (/(expired|closed|filled|no longer accepting)/i.test(lower)) return true;
+
+  const parsed = Date.parse(deadline);
+  if (Number.isNaN(parsed)) return false;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return parsed < today.getTime();
+}
+
+function normalizeLiveJobs(rawJobs = [], fallbackSource = "Web") {
+  return rawJobs
+    .filter(j => j && typeof j === "object" && j.url)
+    .filter(j => !isExpiredDeadline(j.deadline))
+    .filter(j => !/(expired|closed|filled|past application deadline)/i.test(`${j.title || ""} ${j.description || ""}`))
+    .map((j, i) => ({
+      ...j,
+      id: j.id || Date.now() + i,
+      source: j.source || fallbackSource,
+      tags: Array.isArray(j.tags) ? j.tags : [],
+      match: typeof j.match === "number" ? j.match : 82,
+      deadline: j.deadline || "Rolling",
+    }));
+}
+
+function dedupeJobsByUrl(jobs = []) {
+  const seen = new Set();
+  return jobs.filter(job => {
+    const key = (job.url || `${job.title || ""}-${job.firm || ""}`).toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 /* ─── NAV CONFIG ────────────────────────────────────────────────────────── */
 const NAV = [
   { section: "Home", items: [
@@ -1407,48 +1463,66 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
       consulting: "management consulting business analyst strategy consultant associate",
       product: "product manager APM associate product manager growth PM",
     };
-    
+
     try {
-      setScanLog(["🔄 Scanning the web for live job postings..."]);
-      const prompt = `Search for current, real job openings in ${trackName} for ${levelFilter === "undergrad" ? "undergraduates/graduates/summer analysts" : "experienced professionals"} in ${locationFilter || "major financial hubs (London, New York, Hong Kong)"}.
-Keywords: ${trackKw[trackFilter] || trackKw.ib}.
+      setScanLog(["🔄 Crawling live job pages and filtering out expired postings..."]);
 
-Search across these job boards: LinkedIn Jobs, Indeed, UK Trackr, eFinancialCareers, Glassdoor, Bright Network, and company career pages.
+      const crawled = await crawlJobs({
+        query: `${trackKw[trackFilter] || trackKw.ib} ${levelFilter || ""} ${locationFilter || ""}`,
+        track: trackFilter,
+        level: levelFilter,
+        location: locationFilter,
+      });
 
-CRITICAL URL RULES - every job MUST have a real, working "url" field. Construct URLs using these patterns:
-- LinkedIn: https://www.linkedin.com/jobs/search/?keywords=JOB+TITLE+FIRM&location=LOCATION
-- Indeed: https://www.indeed.co.uk/jobs?q=JOB+TITLE+FIRM&l=LOCATION (use .co.uk for UK, .com for US)
-- Company careers: use real career page domains you know (e.g. https://careers.jpmorgan.com, https://www.goldmansachs.com/careers, https://careers.mckinsey.com)
-- eFinancialCareers: https://www.efinancialcareers.com/jobs-search?query=JOB+TITLE
-- Glassdoor: https://www.glassdoor.co.uk/Job/LOCATION-JOB-TITLE-jobs-SRCH_IL.htm
+      const liveJobs = dedupeJobsByUrl(normalizeLiveJobs(crawled, "Crawler"));
 
-Return ONLY a valid JSON array of 6-10 real job postings:
-[{"title":"...","firm":"...","location":"...","deadline":"...","description":"...(2 sentences max)","match":85,"tags":["tag1","tag2"],"source":"LinkedIn","url":"https://..."}]
+      if (liveJobs.length === 0) {
+        setScanLog(prev => [...prev, "⚠ No live results from crawler. Trying AI fallback..."]);
 
-Use real company names. Every job MUST have a url pointing to a real job board search or company careers page.`;
-      
-      const result = await callClaude(prompt, "You are a job search assistant. Return ONLY valid JSON array. No markdown, no explanation.", true);
-      const clean = result.replace(/```json|```/g, "").trim();
-      const start = clean.indexOf("[");
-      const end = clean.lastIndexOf("]") + 1;
-      if (start >= 0) {
-        const parsed = JSON.parse(clean.slice(start, end));
-        const withId = parsed.map((j, i) => ({
-          ...j, id: 300 + Date.now() + i, track: trackFilter, level: levelFilter, saved: false,
-          source: j.source || "Web Search",
-          tags: j.tags || [trackFilter === "ib" ? "IB" : trackFilter === "consulting" ? "Consulting" : "Product"],
+        const fallbackPrompt = `Find current, non-expired job openings in ${trackName} for ${levelFilter === "undergrad" ? "undergraduates/graduates/summer analysts" : "experienced professionals"} in ${locationFilter || "major financial hubs"}.\n\nReturn ONLY valid JSON array with real URLs and no expired roles.`;
+        const result = await callClaude(fallbackPrompt, "You are a job search assistant. Return ONLY valid JSON array. No markdown, no explanation.", true);
+        const clean = result.replace(/```json|```/g, "").trim();
+        const start = clean.indexOf("[");
+        const end = clean.lastIndexOf("]") + 1;
+        if (start >= 0) {
+          const parsed = JSON.parse(clean.slice(start, end));
+          const withId = normalizeLiveJobs(parsed, "AI Fallback").map((j, i) => ({
+            ...j,
+            id: 300 + Date.now() + i,
+            track: trackFilter,
+            level: levelFilter,
+            saved: false,
+            tags: j.tags?.length ? j.tags : [trackFilter === "ib" ? "IB" : trackFilter === "consulting" ? "Consulting" : "Product"],
+          }));
+
+          setDiscJobs(prev => {
+            const existingUrls = new Set(prev.map(j => (j.url || "").toLowerCase()));
+            const newJobs = withId.filter(j => !existingUrls.has((j.url || "").toLowerCase()));
+            return [...newJobs, ...prev];
+          });
+          setScanLog(prev => [...prev, `✓ Found ${withId.length} live roles (AI fallback).`]);
+        } else {
+          setScanLog(prev => [...prev, "⚠ Could not parse fallback results."]);
+        }
+      } else {
+        const withId = liveJobs.map((j, i) => ({
+          ...j,
+          id: 300 + Date.now() + i,
+          track: trackFilter,
+          level: levelFilter,
+          saved: false,
+          tags: j.tags?.length ? j.tags : [trackFilter === "ib" ? "IB" : trackFilter === "consulting" ? "Consulting" : "Product"],
         }));
+
         setDiscJobs(prev => {
-          const existingTitles = new Set(prev.map(j => j.title + j.firm));
-          const newJobs = withId.filter(j => !existingTitles.has(j.title + j.firm));
+          const existingUrls = new Set(prev.map(j => (j.url || "").toLowerCase()));
+          const newJobs = withId.filter(j => !existingUrls.has((j.url || "").toLowerCase()));
           return [...newJobs, ...prev];
         });
-        setScanLog(prev => [...prev, `✓ Found ${withId.length} live ${trackName} roles across ${new Set(withId.map(j=>j.firm)).size} firms.`]);
-      } else {
-        setScanLog(prev => [...prev, "⚠ Could not parse results. Try AI Search tab for better results."]);
+        setScanLog(prev => [...prev, `✓ Found ${withId.length} live ${trackName} roles with real links.`]);
       }
     } catch (err) {
-      setScanLog(prev => [...prev, `⚠ Scan failed: ${err.message}. Try again.`]);
+      setScanLog(prev => [...prev, `⚠ Scan failed: ${err.message}.`]);
     }
     setScanning(false);
   };
@@ -1458,60 +1532,32 @@ Use real company names. Every job MUST have a url pointing to a real job board s
     setAiSearching(true);
     setAiResults([]);
     try {
-      // Build smart keyword expansions based on track
-      const trackKeywords = {
-        ib: "investment banking, IB, analyst, associate, M&A, ECM, DCM, leveraged finance, capital markets, bulge bracket",
-        consulting: "management consulting, strategy consulting, consultant, associate consultant, business analyst, MBB, Big 4, advisory",
-        product: "product manager, APM, associate product manager, product lead, growth PM, technical PM",
-      };
-      const keywords = trackKeywords[trackFilter] || trackKeywords.ib;
-      
-      const prompt = `Find current job openings matching: "${aiSearchQuery}". 
-Related keywords: ${keywords}.
-Focus on ${trackFilter === "ib" ? "investment banking" : trackFilter === "consulting" ? "management consulting" : "product management"} roles for ${levelFilter === "undergrad" ? "undergraduates/recent graduates/summer analysts/interns" : "experienced professionals/lateral hires/associates/VPs"} in ${locationFilter || "major financial centers"}.
+      const crawled = await crawlJobs({
+        query: aiSearchQuery,
+        track: trackFilter,
+        level: levelFilter,
+        location: locationFilter,
+      });
 
-Search across: LinkedIn Jobs, Indeed, UK Trackr, eFinancialCareers, Glassdoor, company career pages.
-
-CRITICAL URL RULES - every job MUST have a real, working "url" field. Construct URLs using these patterns:
-- LinkedIn: https://www.linkedin.com/jobs/search/?keywords=JOB+TITLE+FIRM&location=LOCATION
-- Indeed: https://www.indeed.co.uk/jobs?q=JOB+TITLE+FIRM&l=LOCATION (use .co.uk for UK, .com for US)
-- Company careers: use real career page domains (e.g. https://careers.jpmorgan.com, https://www.goldmansachs.com/careers, https://careers.mckinsey.com)
-- eFinancialCareers: https://www.efinancialcareers.com/jobs-search?query=JOB+TITLE
-
-Return ONLY a valid JSON array, no other text:
-[
-  {"title": "...", "firm": "...", "location": "...", "deadline": "...", "description": "...(2 sentences)", "url": "REAL_URL", "match": (70-99 number), "tags": ["tag1","tag2"]}
-]
-
-Find 5-8 real job postings. Use actual firm names. Every job MUST have a working url.`;
-
-      const result = await callClaude(prompt, "You are a job search assistant. Search the web and return ONLY valid JSON array. No markdown, no explanation.", true);
-      try {
-        const clean = result.replace(/```json|```/g, "").trim();
-        const start = clean.indexOf("[");
-        const end = clean.lastIndexOf("]") + 1;
-        const parsed = JSON.parse(clean.slice(start, end));
-        const withId = parsed.map((j, i) => ({
-          ...j, id: 200 + Date.now() + i, track: trackFilter, level: levelFilter, saved: false,
-          source: "AI Search",
-          tags: j.tags || [trackFilter === "ib" ? "IB" : trackFilter === "consulting" ? "Consulting" : "Product"],
+      const withId = dedupeJobsByUrl(normalizeLiveJobs(crawled, "Crawler"))
+        .map((j, i) => ({
+          ...j,
+          id: 200 + Date.now() + i,
+          track: trackFilter,
+          level: levelFilter,
+          saved: false,
+          source: j.source || "AI Search",
+          tags: j.tags?.length ? j.tags : [trackFilter === "ib" ? "IB" : trackFilter === "consulting" ? "Consulting" : "Product"],
         }));
-        setAiResults(withId);
-        // Also merge into discovery list so they appear in recommended/all tabs
-        setDiscJobs(prev => {
-          const existingTitles = new Set(prev.map(j => j.title + j.firm));
-          const newJobs = withId.filter(j => !existingTitles.has(j.title + j.firm));
-          return [...newJobs, ...prev];
-        });
-      } catch {
-        setAiResults([{
-          id: 200, title: "Results parsed from AI search", firm: "Multiple firms",
-          location: locationFilter, deadline: "Various",
-          description: result.slice(0, 200), match: 85,
-          tags: ["AI Search"], track: trackFilter, level: levelFilter,
-        }]);
-      }
-    } catch (err) {
+
+      setAiResults(withId);
+
+      setDiscJobs(prev => {
+        const existingUrls = new Set(prev.map(j => (j.url || "").toLowerCase()));
+        const newJobs = withId.filter(j => !existingUrls.has((j.url || "").toLowerCase()));
+        return [...newJobs, ...prev];
+      });
+    } catch {
       setAiResults([]);
     }
     setAiSearching(false);
@@ -1619,7 +1665,7 @@ Find 5-8 real job postings. Use actual firm names. Every job MUST have a working
             <div className="card-header">
               <div>
                 <div className="card-title">AI-Powered Job Search</div>
-                <div className="card-subtitle">Claude searches the internet for current openings matching your profile</div>
+                <div className="card-subtitle">Crawler-backed web search for live openings with real application links</div>
               </div>
             </div>
             <div className="flex g10 mb8">
@@ -1635,7 +1681,7 @@ Find 5-8 real job postings. Use actual firm names. Every job MUST have a working
                 {aiSearching ? "🔄 Searching..." : "✨ AI Search"}
               </button>
             </div>
-            <div className="fs11 t-ink4">Uses Claude with web search to find real, current job postings. Results are AI-curated and matched to your profile.</div>
+            <div className="fs11 t-ink4">Searches live web sources and removes expired postings automatically; if crawler is unavailable it falls back gracefully.</div>
           </div>
 
           {aiSearching && (
@@ -1757,18 +1803,32 @@ function WebsiteManager() {
     setSites(prev => prev.map(s => s.id === site.id ? { ...s, status: "scanning" } : s));
     const trackKw = { ib: "investment banking analyst M&A ECM DCM summer analyst", consulting: "management consulting business analyst strategy", product: "product manager APM growth PM" };
     try {
-      const prompt = `Search for current job openings on ${site.url} (${site.label}). Focus on ${newTrack === "ib" ? "investment banking" : newTrack} roles in ${newLocation || "London"}. Keywords: ${trackKw[newTrack] || trackKw.ib}. Return JSON: [{"title":"...","location":"...","deadline":"...","description":"..."}]. Return 2-4 jobs only.`;
-      const result = await callClaude(prompt, "Return only a JSON array of job objects. No markdown.", true);
-      let found = 0;
-      try {
-        const clean = result.replace(/```json|```/g, "").trim();
-        const start = clean.indexOf("["); const end = clean.lastIndexOf("]") + 1;
-        if (start >= 0) { const parsed = JSON.parse(clean.slice(start, end)); found = parsed.length; setScanResults(prev => ({ ...prev, [site.id]: parsed })); }
-      } catch { found = Math.floor(Math.random() * 4) + 1; }
+      const crawled = await crawlJobs({
+        query: `${trackKw[newTrack] || trackKw.ib} ${newLocation || ""}`,
+        track: newTrack,
+        level: "",
+        location: newLocation,
+        siteUrl: site.url,
+      });
+
+      const parsed = dedupeJobsByUrl(normalizeLiveJobs(crawled, site.label || "Website Crawler"));
+      const found = parsed.length;
+      setScanResults(prev => ({ ...prev, [site.id]: parsed }));
+
       setSites(prev => prev.map(s => s.id === site.id ? { ...s, status: "active", lastScanned: "Just now", jobsFound: found } : s));
-      if (user) upsertWebsite(user.id, { id: site.id, url: site.url, label: site.label, frequency: site.freq, status: "active", last_scanned: "Just now", jobs_found: found });
+      if (user) {
+        upsertWebsite(user.id, {
+          id: site.id,
+          url: site.url,
+          label: site.label,
+          frequency: site.freq,
+          status: "active",
+          last_scanned: "Just now",
+          jobs_found: found,
+        });
+      }
     } catch {
-      setSites(prev => prev.map(s => s.id === site.id ? { ...s, status: "active", lastScanned: "Just now" } : s));
+      setSites(prev => prev.map(s => s.id === site.id ? { ...s, status: "active", lastScanned: "Just now", jobsFound: 0 } : s));
     }
     setScanning(null);
   };

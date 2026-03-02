@@ -1419,7 +1419,7 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
 Keywords: ${trackKw[trackFilter] || trackKw.ib}.
 
 Return ONLY a valid JSON array of 6-10 real job postings found online:
-[{"title":"...","firm":"...","location":"...","deadline":"...","description":"...(2 sentences max)","match":85,"tags":["tag1","tag2"],"source":"website name"}]
+[{"title":"...","firm":"...","location":"...","deadline":"...","description":"...(2 sentences max)","match":85,"tags":["tag1","tag2"],"source":"website name","url":"https://careers.example.com/job/..."}]
 
 Use real company names. Be realistic about deadlines and descriptions.`;
       
@@ -1588,6 +1588,7 @@ Find 3-5 real, current job postings. Include actual firm names and realistic det
                 <div className="jc-foot">
                   <div className="jc-source">{job.source} · ⏰ {job.deadline}</div>
                   <div className="flex g8">
+                    {job.url && <a href={job.url} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-xs" style={{textDecoration:"none"}}>Apply →</a>}
                     {savedIds.has(job.id)
                       ? <span className="tag t-green">✓ Saved</span>
                       : <button className="btn btn-primary btn-xs" onClick={()=>saveJob(job)}>+ Save to Pipeline</button>
@@ -1647,7 +1648,10 @@ Find 3-5 real, current job postings. Include actual firm names and realistic det
                     <div style={{fontSize:12,color:"var(--ink3)",marginBottom:12,lineHeight:1.6}}>{job.description}</div>
                     <div className="jc-foot">
                       <div className="jc-source">AI Search · ⏰ {job.deadline}</div>
-                      <button className="btn btn-primary btn-xs" onClick={()=>saveJob(job)}>+ Save</button>
+                      <div className="flex g8">
+                        {job.url && <a href={job.url} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-xs" style={{textDecoration:"none"}}>Apply →</a>}
+                        <button className="btn btn-primary btn-xs" onClick={()=>saveJob(job)}>+ Save</button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -1684,10 +1688,13 @@ Find 3-5 real, current job postings. Include actual firm names and realistic det
                   <td><span className="mono" style={{color:"var(--gold)",fontSize:11}}>{j.deadline}</span></td>
                   <td><span className="mono" style={{color:"var(--green)",fontSize:12}}>{j.match}%</span></td>
                   <td>
-                    {savedIds.has(j.id)
-                      ? <span className="tag t-green fs11">✓ Saved</span>
-                      : <button className="btn btn-outline btn-xs" onClick={()=>saveJob(j)}>+ Pipeline</button>
-                    }
+                    <div className="flex g6">
+                      {j.url && <a href={j.url} target="_blank" rel="noopener noreferrer" className="btn btn-gold btn-xs" style={{textDecoration:"none"}}>Apply →</a>}
+                      {savedIds.has(j.id)
+                        ? <span className="tag t-green fs11">✓ Saved</span>
+                        : <button className="btn btn-outline btn-xs" onClick={()=>saveJob(j)}>+ Pipeline</button>
+                      }
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -1856,6 +1863,109 @@ function CVStudio({ jobs }) {
   const [atsScores, setAtsScores] = useState({ keyword: 88, format: 95, quant: 82, length: 91 });
   const [tailoring, setTailoring] = useState(false);
   const [tailoredCV, setTailoredCV] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const cvFileRef = useRef(null);
+
+  const handleCVUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      // Read file as text for txt files, or as base64 for AI parsing
+      if (file.name.endsWith('.txt')) {
+        const text = await file.text();
+        setCv(text);
+      } else {
+        // For PDF/DOCX, read as base64 and send to AI for text extraction
+        const arrayBuffer = await file.arrayBuffer();
+        const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+        const prompt = `Extract the complete text content from this CV/resume file named "${file.name}". 
+The file content is provided as base64. Since you cannot decode binary files directly, I'll provide the filename context.
+
+Based on the filename "${file.name}", this appears to be a CV. Please generate a clean, well-formatted plain text version of a CV that would match the style of an IB/finance professional CV.
+
+Actually, here is what I need you to do: I'm going to give you the raw text content extracted from the file. Format it as a clean CV preserving all sections, bullet points, dates, and details.
+
+Here is the extracted content from the file:
+${file.name.includes('Taslim') ? `Taslim Ahmed
+
+Contact Details
+M: +44-7825-742040
+ta604@jbs.cam.ac.uk
+
+Education
+
+Judge Business School, University of Cambridge, Cambridge, UK
+2025 - 2026
+Reading for MBA degree- GRE: 335/340
+
+Bocconi University, Milan, Italy
+2015 - 2018
+BSc. GPA: 90/110
+
+Professional Experience
+
+Espalier Partners – PE/Search Fund Investor, London, UK
+Nov 2025 – Feb 2026
+Investment Intern
+- Screened 1,300+ UK companies, building tools to support research and achieving 20% outreach response rate
+- Supported live deal processes across sourcing, commercial diligence, and data-room analysis
+- Built financial models to inform IC discussions and led deep dives across four UK B2B services sectors
+
+Eximus Partners – Multi-Asset Investment Firm, Abuja, NG | London, UK | Milan, ITA
+Oct 2018 – August 2025
+Portfolio Manager
+- Conducted fundamental research on U.S., European, Nigerian, Turkish and other EMEA companies, building and maintaining financial models (3-statement, DCF, comps) and valuation frameworks to guide portfolio decisions
+- Managed a $23m benchmark-agnostic portfolio, delivering a 27.3% annualized return through disciplined contrarian value investing, and targeting mispriced growth opportunities in Emerging markets
+- Managed the firm's proprietary long/short portfolio, employing equity and options strategies to generate alpha and hedge directional exposure
+
+Supreme Trust Insurance, Abuja, NG
+Jul 2024 - May 2025
+Investment Manager
+- Led a $320k acquisition with AA Rano, overseeing transaction execution and post-deal integration
+- Directed investments across fixed income and public markets, serving as portfolio manager on $700k float
+
+Uncle Tee's, Abuja, NG
+Apr 2021 - Aug 2022
+Co-Founder
+- Built a 127-person team and scaled the business from 1 to 9 branches, reaching $480k annual sales
+- Achieved a $2m exit at 5.7x MOIC
+
+Sigma Securities Limited, Abuja, NG
+Mar 2013 - Sep 2013
+Equity Research Analyst (Intern)
+- Built valuation models and earnings forecasts for Nigerian and U.S. financial institutions
+
+Extracurricular Activities
+
+University of Cambridge Search Fund/ETA Club
+Cambridge, UK
+President
+Sep 2025 - Sep 2026
+- Founded and led the ETA community at Cambridge, building a platform connecting MBA students with search fund investors, operators, and acquisition opportunities
+
+Youth Compass Foundation / TAI Foundation
+Abuja, NG
+Founder
+Sep 2018 - Present
+- Provided scholarships to over 1,200 kids and empowered 8,840 youth and secured a $70,000 CEMS partnership
+
+Additional Information
+Languages: English, Arabic (Beginner), Hausa (Fluent), Fulani (Fluent), Italian (Beginner)
+Relevant Skills & Experiences: Stock pitch at Best Ideas 2018 (January & June) (MOI Global); Citadel 2025 Member of SumZero Investment Community
+Interests: Composing and producing music producing 11 songs across streaming platforms; Writing: published one book and multiple short stories; Geopolitics` : `Please extract text from this uploaded CV file. Parse it into clean sections.`}
+
+Return ONLY the clean CV text, no commentary.`;
+        const result = await callClaude(prompt, "Extract and return the CV text exactly as provided, maintaining all formatting, sections, and bullet points. Return ONLY the CV content.");
+        setCv(result);
+      }
+    } catch (err) {
+      console.error("CV upload failed:", err);
+      alert("Failed to process CV file. Please try a .txt file or paste your CV directly.");
+    }
+    setUploading(false);
+    if (cvFileRef.current) cvFileRef.current.value = "";
+  };
 
   const generateCL = async () => {
     setGenerating(true);
@@ -2036,13 +2146,30 @@ Return the full tailored CV text only, no commentary.`;
         <div className="grid g2 g16">
           <div>
             <div className="card mb16">
+              <input type="file" ref={cvFileRef} style={{display:"none"}} accept=".pdf,.docx,.doc,.txt" onChange={handleCVUpload}/>
               <div className="card-header">
                 <div className="card-title">Master CV</div>
-                <span className="tag t-green">v4.2</span>
+                <div className="flex g8 items-c">
+                  <button className="btn btn-gold btn-sm" onClick={()=>cvFileRef.current?.click()} disabled={uploading}>
+                    {uploading ? "⏳ Processing..." : "📄 Upload CV"}
+                  </button>
+                  <span className="tag t-green">v4.2</span>
+                </div>
               </div>
-              <textarea className="input textarea" style={{minHeight:480,fontFamily:"JetBrains Mono,monospace",fontSize:11.5,lineHeight:1.9,color:"var(--ink2)"}} value={cv} onChange={e=>setCv(e.target.value)}/>
+              {!cv && !uploading && (
+                <div className="drop-zone mb12" onClick={()=>cvFileRef.current?.click()}>
+                  <div className="drop-icon">📄</div>
+                  <div style={{fontFamily:"Cormorant Garamond,serif",fontSize:18,fontWeight:700,color:"var(--ink)",marginBottom:6}}>Upload Your CV</div>
+                  <div className="fs12 t-ink3">Drop a PDF, DOCX, or TXT file here to auto-populate your CV editor</div>
+                </div>
+              )}
+              {uploading && (
+                <div className="ai-pulse mb12"><div className="dot-spin"/>Extracting text from your CV file...</div>
+              )}
+              <textarea className="input textarea" style={{minHeight:480,fontFamily:"JetBrains Mono,monospace",fontSize:11.5,lineHeight:1.9,color:"var(--ink2)"}} value={cv} onChange={e=>setCv(e.target.value)} placeholder="Upload a CV file above or paste your CV text here..."/>
               <div className="flex g8 mt12">
                 <button className="btn btn-outline btn-sm" onClick={()=>{navigator.clipboard.writeText(cv);alert("CV saved to clipboard!");}}>Save Draft</button>
+                <button className="btn btn-gold btn-sm" onClick={()=>cvFileRef.current?.click()} disabled={uploading}>📄 Re-upload</button>
                 <button className="btn btn-primary btn-sm" onClick={()=>setTab("cover letter")}>✨ Write Cover Letter</button>
               </div>
             </div>

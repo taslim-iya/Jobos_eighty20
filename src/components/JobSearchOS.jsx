@@ -1193,20 +1193,9 @@ const PLAYBOOKS = {
   }
 };
 
-const INIT_JOBS = [
-  { id:1, title:"Investment Banking Analyst", firm:"Goldman Sachs", stage:"interviewing", deadline:"Mar 15", match:94, tags:["IB","NY"], track:"ib", level:"undergrad" },
-  { id:2, title:"Summer Analyst – M&A", firm:"Morgan Stanley", stage:"applying", deadline:"Mar 8", match:88, tags:["IB","SA"], track:"ib", level:"undergrad" },
-  { id:3, title:"Associate Consultant", firm:"McKinsey & Co", stage:"outreach", deadline:"Apr 1", match:82, tags:["Consulting"], track:"consulting", level:"undergrad" },
-  { id:4, title:"APM – Monetization", firm:"Meta", stage:"saved", deadline:"Apr 20", match:77, tags:["Product","APM"], track:"product", level:"undergrad" },
-  { id:5, title:"IB Analyst – Tech Coverage", firm:"Lazard", stage:"offer", deadline:"—", match:91, tags:["IB","Tech"], track:"ib", level:"undergrad" },
-];
+const INIT_JOBS = [];
 
-const INIT_WEBSITES = [
-  { id:1, url:"https://www.goldmansachs.com/careers", label:"Goldman Sachs Careers", freq:"daily", lastScanned:"2h ago", jobsFound:4, status:"active" },
-  { id:2, url:"https://www.morganstanley.com/careers", label:"Morgan Stanley Careers", freq:"daily", lastScanned:"3h ago", jobsFound:2, status:"active" },
-  { id:3, url:"https://www.mckinsey.com/careers", label:"McKinsey Careers", freq:"weekly", lastScanned:"1d ago", jobsFound:3, status:"active" },
-  { id:4, url:"https://www.linkedin.com/jobs", label:"LinkedIn Jobs", freq:"daily", lastScanned:"30m ago", jobsFound:12, status:"active" },
-];
+const INIT_WEBSITES = [];
 
 const DISC_JOBS = [];
 
@@ -1325,13 +1314,19 @@ function Dashboard({ jobs, profile }) {
           <div className="card-header">
             <div><div className="card-title">This Week</div><div className="card-subtitle">Auto-generated from playbook</div></div>
           </div>
-          {[
-            { day:"MON", task:"Send 8 cold emails (GS + MS)", done:true },
-            { day:"TUE", task:"DCF technical drill ×15", done:false },
-            { day:"WED", task:"Follow-up: Priya Sharma @ McKinsey", done:false },
-            { day:"THU", task:"LBO model practice 2hrs", done:false },
-            { day:"FRI", task:"Mock interview session (30 min)", done:false },
-          ].map(d => (
+          {(jobs.length > 0 ? [
+            { day:"MON", task: jobs[0] ? `Follow up on ${jobs[0].firm} application` : "Review pipeline", done:false },
+            { day:"TUE", task:"Technical prep session (1 hr)", done:false },
+            { day:"WED", task: jobs.filter(j=>j.stage==="outreach")[0] ? `Outreach: ${jobs.filter(j=>j.stage==="outreach")[0].firm}` : "Research target firms", done:false },
+            { day:"THU", task:"Practice interview questions", done:false },
+            { day:"FRI", task: jobs.filter(j=>j.stage==="interviewing")[0] ? `Prep for ${jobs.filter(j=>j.stage==="interviewing")[0].firm} interview` : "Review & plan next week", done:false },
+          ] : [
+            { day:"MON", task:"Start by adding roles in Job Discovery", done:false },
+            { day:"TUE", task:"Upload your CV in CV Studio", done:false },
+            { day:"WED", task:"Add target websites to Website Manager", done:false },
+            { day:"THU", task:"Explore Playbooks for your track", done:false },
+            { day:"FRI", task:"Practice interview questions", done:false },
+          ]).map(d => (
             <div key={d.day} className="flex items-c g10 mb8">
               <div className="mono" style={{width:30,fontSize:10,color:"var(--gold)"}}>{d.day}</div>
               <div style={{
@@ -1724,11 +1719,8 @@ function WebsiteManager() {
   useEffect(() => {
     if (!user) return;
     fetchWebsites(user.id).then(({ data }) => {
-      if (data && data.length > 0) {
+      if (data) {
         setSites(data.map(s => ({ id: s.id, url: s.url, label: s.label, freq: s.frequency, lastScanned: s.last_scanned, jobsFound: s.jobs_found, status: s.status })));
-      } else {
-        setSites(INIT_WEBSITES);
-        INIT_WEBSITES.forEach(site => upsertWebsite(user.id, { url: site.url, label: site.label, frequency: site.freq, last_scanned: site.lastScanned, jobs_found: site.jobsFound, status: site.status }));
       }
     });
   }, [user]);
@@ -2211,12 +2203,15 @@ Return the full tailored CV text only, no commentary.`;
             </div>
             <div className="card">
               <div className="card-title mb16">AI Suggestions</div>
-              {[
-                { type:"⚠️", text:"Add a metric to the Morgan Stanley bullet — e.g. volume of notes or audience size" },
-                { type:"✅", text:"Strong quantification in Goldman bullet ($2.3B + 30%)" },
-                { type:"💡", text:"Consider adding CFA Level 1 or Bloomberg BMC if completed" },
-                { type:"⚠️", text:"Python experience could be stronger — specify libraries and use case" },
-              ].map((s,i)=>(
+              {(cv ? [
+                { type:"💡", text:"Use the 'AI Tailor CV' feature below to optimise for specific job descriptions" },
+                { type:"💡", text:"Quantify achievements where possible — numbers, percentages, and dollar amounts stand out" },
+                { type:"💡", text:"Ensure bullet points start with strong action verbs" },
+                { type:"💡", text:"Keep your CV to one page for undergraduate roles, two for experienced" },
+              ] : [
+                { type:"📄", text:"Upload your CV to get personalised AI suggestions" },
+                { type:"💡", text:"Use the upload button above or paste your CV text directly" },
+              ]).map((s,i)=>(
                 <div key={i} style={{display:"flex",gap:10,padding:"9px 0",borderBottom:i<3?"1px solid var(--border2)":"none",fontSize:12,lineHeight:1.6}}>
                   <span style={{flexShrink:0}}>{s.type}</span>
                   <span style={{color:"var(--ink2)"}}>{s.text}</span>
@@ -2800,19 +2795,15 @@ Keep under 150 words. Be specific and direct.`;
       {tab === "progress" && (
         <div>
           <div className="grid g3 mb16">
-            {[{l:"Sessions",v:"12",d:"+3 this week",up:true},{l:"Avg Score",v:"81",d:"+6 pts",up:true},{l:"Best Category",v:"Behavioral",d:"92 avg",up:true}].map(k=>(
+            {[{l:"Sessions",v:"0",d:"start practicing",up:false},{l:"Avg Score",v:"—",d:"no data yet",up:false},{l:"Best Category",v:"—",d:"complete a session",up:false}].map(k=>(
               <div key={k.l} className="kpi"><div className="kpi-label">{k.l}</div><div className="kpi-val">{k.v}</div><div className={`kpi-delta ${k.up?"up":""}`}>{k.up?"▲":""} {k.d}</div></div>
             ))}
           </div>
           <div className="card">
             <div className="card-title mb16">Score History</div>
-            <div style={{display:"flex",gap:6,alignItems:"flex-end",height:80}}>
-              {[74,78,75,80,82,79,84,86,83,88,85,91].map((v,i)=>(
-                <div key={i} title={`Session ${i+1}: ${v}`} style={{flex:1,background:`linear-gradient(180deg, var(--navy2), var(--navy3))`,borderRadius:"4px 4px 0 0",height:`${(v/100)*100}%`,opacity:0.6+i*0.03}}/>
-              ))}
-            </div>
-            <div style={{display:"flex",gap:6,paddingTop:6,borderTop:"1px solid var(--border2)"}}>
-              {Array.from({length:12},(_,i)=><div key={i} style={{flex:1,textAlign:"center",fontFamily:"JetBrains Mono,monospace",fontSize:9,color:"var(--ink4)"}}>S{i+1}</div>)}
+            <div style={{textAlign:"center",padding:"32px",color:"var(--ink4)",fontSize:13}}>
+              <div style={{fontSize:28,marginBottom:8}}>📊</div>
+              Complete practice sessions to build your score history.
             </div>
           </div>
         </div>
@@ -3255,13 +3246,7 @@ Format with clear headers.`;
 /* ════════════════════════════════════════════════════════════════════════════
    PAGE: OUTREACH
 ══════════════════════════════════════════════════════════════════════════════ */
-const OUTREACH_DATA = [
-  { name:"Alex Chen", firm:"Goldman Sachs", role:"VP – TMT", ch:"Email", status:"replied", date:"Feb 18", seq:"Cold S2" },
-  { name:"Priya Sharma", firm:"McKinsey", role:"Partner", ch:"LinkedIn", status:"sent", date:"Feb 20", seq:"Referral S1" },
-  { name:"Marcus Williams", firm:"Morgan Stanley", role:"MD – M&A", ch:"Email", status:"pending", date:"Feb 22", seq:"Cold S1" },
-  { name:"Sarah Kim", firm:"Bain & Co", role:"Senior Manager", ch:"Email", status:"bounced", date:"Feb 16", seq:"Cold S1" },
-  { name:"James Park", firm:"Meta", role:"GPM", ch:"LinkedIn", status:"replied", date:"Feb 12", seq:"Cold S3" },
-];
+const OUTREACH_DATA = [];
 function Outreach() {
   return (
     <div className="page">
@@ -3293,10 +3278,13 @@ function Outreach() {
 function Extension() {
   const [filled, setFilled] = useState(0);
   const [running, setRunning] = useState(false);
+  const { user, profile: authProfile } = useAuth();
+  const displayName = authProfile?.display_name || user?.email?.split("@")[0] || "Your Name";
+  const nameParts = displayName.split(" ");
   const fields = [
-    {name:"First Name",val:"Alexandra"},{name:"Last Name",val:"Chen"},
-    {name:"Email",val:"alex.chen@columbia.edu"},{name:"University",val:"Columbia University"},
-    {name:"GPA",val:"3.82"},{name:"Resume",val:"Resume_Goldman_v4.pdf"},
+    {name:"First Name",val: nameParts[0] || "—"},{name:"Last Name",val: nameParts.slice(1).join(" ") || "—"},
+    {name:"Email",val: user?.email || "—"},{name:"University",val: authProfile?.university || "—"},
+    {name:"GPA",val: authProfile?.gpa || "—"},{name:"Resume",val:"Your_CV.pdf"},
   ];
   const demo = () => {
     setRunning(true); setFilled(0);
@@ -3359,7 +3347,8 @@ function Extension() {
           </div>
           <div className="card">
             <div className="card-title mb12">Audit Log</div>
-            {[{a:"Field filled: First Name → Alexandra",t:"14:22:01"},{a:"Field filled: Email → alex.chen@columbia.edu",t:"14:22:02"},{a:"Resume uploaded: Goldman_v4.pdf",t:"14:22:04"},{a:"Answer suggested: 'Why Goldman?' — user edited",t:"14:22:18"},{a:"Unknown field prompted: Preferred Office",t:"14:22:31"}].map((l,i)=>(
+            <div style={{textAlign:"center",padding:"24px",color:"var(--ink4)",fontSize:12}}>No autofill sessions yet. Install the extension and start an application to see activity here.</div>
+            {[].map((l,i)=>(
               <div key={i} style={{display:"flex",gap:14,padding:"8px 0",borderBottom:i<4?"1px solid var(--border2)":"none"}}>
                 <span className="mono fs10 t-ink4" style={{flexShrink:0}}>{l.t}</span>
                 <span className="fs12 t-ink2">{l.a}</span>
@@ -3600,10 +3589,6 @@ export default function JobSearchOS() {
           description: j.description,
           source: j.source,
         })));
-      } else {
-        // Seed with initial data for new users
-        setJobs(INIT_JOBS);
-        INIT_JOBS.forEach(job => upsertJob(user.id, job));
       }
       setDbLoaded(true);
     });
@@ -3668,7 +3653,7 @@ export default function JobSearchOS() {
               <div className="logo-mark">JS</div>
               <div className="logo-text-wrap">
                 <div className="logo-name">Job Search OS</div>
-                <div className="logo-tag">v1.0 Alpha</div>
+                <div className="logo-tag">v1.0</div>
               </div>
             </div>
           </div>
@@ -3720,7 +3705,7 @@ export default function JobSearchOS() {
             <div className="topbar-actions">
               <input className="input" placeholder="Search everything..." style={{width:200,padding:"6px 12px"}}/>
               <button className="btn btn-ghost btn-sm">🔔</button>
-              <button className="btn btn-gold btn-sm">Upgrade to Pro →</button>
+              <button className="btn btn-gold btn-sm">🚀 Pro</button>
             </div>
           </div>
           {renderPage()}

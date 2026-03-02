@@ -1457,16 +1457,22 @@ Use real company names. Be realistic about deadlines and descriptions.`;
       };
       const keywords = trackKeywords[trackFilter] || trackKeywords.ib;
       
-      const prompt = `Search for current job openings that match this query: "${aiSearchQuery}". 
-Also consider these related keywords: ${keywords}.
+      const prompt = `Find current job openings matching: "${aiSearchQuery}". 
+Related keywords: ${keywords}.
 Focus on ${trackFilter === "ib" ? "investment banking" : trackFilter === "consulting" ? "management consulting" : "product management"} roles for ${levelFilter === "undergrad" ? "undergraduates/recent graduates/summer analysts/interns" : "experienced professionals/lateral hires/associates/VPs"} in ${locationFilter || "major financial centers"}.
 
-For each job found, provide in JSON format (return ONLY valid JSON array, no other text):
+CRITICAL: For each job, the "url" field MUST be a real, working application link. Use these URL patterns:
+- LinkedIn: https://www.linkedin.com/jobs/search/?keywords=JOBTITLE+FIRM
+- Indeed: https://www.indeed.com/jobs?q=JOBTITLE+FIRM&l=LOCATION
+- Glassdoor: https://www.glassdoor.com/Job/LOCATION-JOBTITLE-jobs-SRCH_IL.htm
+- Company careers pages: https://FIRM.com/careers (use real company career page URLs when you know them, e.g. https://careers.jpmorgan.com, https://www.goldmansachs.com/careers)
+
+Return ONLY a valid JSON array, no other text:
 [
-  {"title": "...", "firm": "...", "location": "...", "deadline": "...", "description": "...(2 sentences)", "url": "...", "match": (70-99 number), "tags": ["tag1","tag2"]}
+  {"title": "...", "firm": "...", "location": "...", "deadline": "...", "description": "...(2 sentences)", "url": "REAL_URL_FROM_ABOVE_PATTERNS", "match": (70-99 number), "tags": ["tag1","tag2"]}
 ]
 
-Find 3-5 real, current job postings. Include actual firm names and realistic details.`;
+Find 3-5 real job postings. Use actual firm names. Every job MUST have a working url linking to a real job board or company careers page.`;
 
       const result = await callClaude(prompt, "You are a job search assistant. Search the web and return ONLY valid JSON array. No markdown, no explanation.", true);
       try {
@@ -1658,7 +1664,7 @@ Find 3-5 real, current job postings. Include actual firm names and realistic det
             <div className="card-tinted" style={{textAlign:"center",padding:"40px 24px"}}>
               <div style={{fontSize:32,marginBottom:12}}>🔍</div>
               <div style={{fontFamily:"Cormorant Garamond, serif",fontSize:18,fontWeight:700,color:"var(--ink)",marginBottom:8}}>Search the Web for Live Jobs</div>
-              <div style={{fontSize:13,color:"var(--ink3)"}}>Type a search query above. Claude will search the internet and return current, relevant job postings.</div>
+              <div style={{fontSize:13,color:"var(--ink3)"}}>Type a search query above. AI will find relevant roles and link directly to job boards like LinkedIn, Indeed, and company career pages.</div>
             </div>
           )}
         </div>
@@ -1816,7 +1822,7 @@ function WebsiteManager() {
       <div className="grid g2 g16">
         <div className="card">
           <div className="card-title mb12">Quick Add Popular Sites</div>
-          {[{label:"LinkedIn Jobs",url:"https://www.linkedin.com/jobs"},{label:"Glassdoor",url:"https://www.glassdoor.co.uk/Job"},{label:"Handshake",url:"https://joinhandshake.co.uk"},{label:"Bright Network",url:"https://www.brightnetwork.co.uk"},{label:"eFinancialCareers",url:"https://www.efinancialcareers.com"}].map(s=>(
+          {[{label:"LinkedIn Jobs",url:"https://www.linkedin.com/jobs"},{label:"Indeed",url:"https://www.indeed.com/jobs"},{label:"UK Trackr",url:"https://uktrackr.co.uk"},{label:"Glassdoor",url:"https://www.glassdoor.co.uk/Job"},{label:"Handshake",url:"https://joinhandshake.co.uk"},{label:"Bright Network",url:"https://www.brightnetwork.co.uk"},{label:"eFinancialCareers",url:"https://www.efinancialcareers.com"}].map(s=>(
             <div key={s.label} className="flex items-c j-between" style={{padding:"9px 0",borderBottom:"1px solid var(--border2)"}}>
               <div><div className="fw5 fs12" style={{color:"var(--ink)"}}>{s.label}</div><div className="fs11 t-ink4">{s.url}</div></div>
               <button className="btn btn-outline btn-xs" onClick={async()=>{

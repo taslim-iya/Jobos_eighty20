@@ -27,6 +27,7 @@ export async function upsertJob(userId, job) {
         location: job.location,
         description: job.description,
         source: job.source,
+        url: job.url,
       })
       .eq("id", job.id)
       .eq("user_id", userId)
@@ -50,6 +51,7 @@ export async function upsertJob(userId, job) {
       location: job.location,
       description: job.description,
       source: job.source,
+      url: job.url,
     })
     .select()
     .single();

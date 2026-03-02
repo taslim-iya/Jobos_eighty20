@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { fetchJobs, upsertJob, deleteJob, fetchDocuments, upsertDocument, deleteDocument, uploadFile, deleteFile, exportToCSV, exportToText, fetchWebsites, upsertWebsite, deleteWebsite } from "@/lib/database";
+import { fetchJobs, upsertJob, deleteJob, fetchDocuments, upsertDocument, deleteDocument, uploadFile, deleteFile, exportToCSV, exportToText, fetchWebsites, upsertWebsite, deleteWebsite, fetchContacts, upsertContact } from "@/lib/database";
 import { supabase } from "@/integrations/supabase/client";
 import { jsPDF } from "jspdf";
 // html2canvas removed — using jsPDF native text rendering for small file sizes
@@ -1427,18 +1427,46 @@ function Dashboard({ jobs, profile }) {
    PAGE: JOB DISCOVERY
 ══════════════════════════════════════════════════════════════════════════════ */
 function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
+  const { user } = useAuth();
   const [tab, setTab] = useState("recommended");
   const [trackFilter, setTrackFilter] = useState(profile.track);
   const [levelFilter, setLevelFilter] = useState(profile.level);
   const [locationFilter, setLocationFilter] = useState("London");
   const [searchQuery, setSearchQuery] = useState("");
-  const [discJobs, setDiscJobs] = useState(DISC_JOBS);
+  const [discJobs, setDiscJobs] = useState([]);
   const [scanning, setScanning] = useState(false);
   const [scanLog, setScanLog] = useState([]);
   const [aiSearchQuery, setAiSearchQuery] = useState("");
   const [aiSearching, setAiSearching] = useState(false);
   const [aiResults, setAiResults] = useState([]);
   const [savedIds, setSavedIds] = useState(new Set());
+
+  // Load user's jobs from database into discovery view
+  useEffect(() => {
+    if (!user) return;
+    fetchJobs(user.id).then(({ data }) => {
+      if (data && data.length > 0) {
+        const mapped = data.map(j => ({
+          id: j.id,
+          title: j.title,
+          firm: j.firm,
+          stage: j.stage,
+          deadline: j.deadline || "Rolling",
+          match: j.match_score || 80,
+          tags: j.tags || [],
+          track: j.track,
+          level: j.experience_level,
+          location: j.location,
+          description: j.description || "",
+          source: j.source || "Scraper",
+          url: j.url || "",
+          saved: true,
+        }));
+        setDiscJobs(mapped);
+        setSavedIds(new Set(mapped.map(j => j.id)));
+      }
+    });
+  }, [user]);
 
   const filtered = discJobs.filter(j => {
     const matchTrack = !trackFilter || j.track === trackFilter;
@@ -2609,8 +2637,20 @@ Return the full tailored CV text only, no commentary.`;
    PAGE: PIPELINE
 ══════════════════════════════════════════════════════════════════════════════ */
 function Pipeline({ jobs }) {
+  const { user } = useAuth();
   const stages = ["saved","outreach","applying","interviewing","offer"];
   const labels = {saved:"Saved",outreach:"Outreach",applying:"Applying",interviewing:"Interviewing",offer:"Offer ✓"};
+  const [contacts, setContacts] = useState([]);
+  const [crmTab, setCrmTab] = useState("pipeline");
+  const [uploading, setUploading] = useState(false);
+  const [uploadLog, setUploadLog] = useState("");
+  const crmFileRef = useRef(null);
+
+  // Load contacts from DB
+  useEffect(() => {
+    if (!user) return;
+    fetchContacts(user.id).then(({ data }) => setContacts(data || []));
+  }, [user]);
 
   const handleExportCSV = () => {
     const exportData = jobs.map(j => ({
@@ -2621,8 +2661,90 @@ function Pipeline({ jobs }) {
     exportToCSV(exportData, "pipeline_export");
   };
 
+  const handleCrmUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+    setUploading(true);
+    setUploadLog("📄 Reading file...");
+    try {
+      let textContent = "";
+      const ext = file.name.split(".").pop().toLowerCase();
+
+      if (ext === "csv" || ext === "xlsx" || ext === "xls") {
+        // Read as text for CSV
+        textContent = await file.text();
+      } else {
+        // For PDF/DOCX, use the extract-document edge function
+        const reader = new FileReader();
+        const base64 = await new Promise((resolve) => {
+          reader.onload = () => resolve(reader.result.split(",")[1]);
+          reader.readAsDataURL(file);
+        });
+        setUploadLog("🤖 Extracting text from document...");
+        const { data, error } = await supabase.functions.invoke("extract-document", {
+          body: { base64, fileName: file.name, mimeType: file.type },
+        });
+        if (error || data?.error) throw new Error(data?.error || error?.message || "Extraction failed");
+        textContent = data.text;
+      }
+
+      setUploadLog("🤖 AI is parsing contacts from your file...");
+      const prompt = `Parse the following document content into a list of professional contacts for a CRM. Extract name, firm/company, role/title, email or phone (as channel), and any notes.
+
+Return ONLY a valid JSON array like:
+[{"name":"John Smith","firm":"Goldman Sachs","role":"VP","channel":"john@gs.com","notes":"Met at networking event"}]
+
+If there are no contacts, return [].
+
+Document content:
+${textContent.slice(0, 6000)}`;
+
+      const result = await callClaude(prompt, "You are a CRM data parser. Return ONLY valid JSON array. No markdown.", true);
+      const clean = result.replace(/```json|```/g, "").trim();
+      const start = clean.indexOf("[");
+      const end = clean.lastIndexOf("]") + 1;
+      if (start < 0) throw new Error("Could not parse contacts from file");
+
+      const parsed = JSON.parse(clean.slice(start, end));
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        setUploadLog("⚠ No contacts found in the file.");
+        setUploading(false);
+        return;
+      }
+
+      // Insert contacts into DB
+      let inserted = 0;
+      for (const c of parsed) {
+        const { error } = await upsertContact(user.id, {
+          name: c.name || "Unknown",
+          firm: c.firm || c.company || "",
+          role: c.role || c.title || "",
+          channel: c.channel || c.email || "Email",
+          status: "pending",
+          notes: c.notes || "",
+        });
+        if (!error) inserted++;
+      }
+
+      // Refresh contacts
+      const { data: refreshed } = await fetchContacts(user.id);
+      setContacts(refreshed || []);
+      setUploadLog(`✅ Imported ${inserted} contacts from ${file.name}`);
+    } catch (err) {
+      setUploadLog(`⚠ Upload failed: ${err.message}`);
+    }
+    setUploading(false);
+    if (crmFileRef.current) crmFileRef.current.value = "";
+  };
+
+  const deleteContactRow = async (contactId) => {
+    await supabase.from("contacts").delete().eq("id", contactId).eq("user_id", user.id);
+    setContacts(prev => prev.filter(c => c.id !== contactId));
+  };
+
   return (
     <div className="page">
+      <input type="file" ref={crmFileRef} style={{display:"none"}} accept=".csv,.xlsx,.xls,.pdf,.docx,.doc,.txt" onChange={handleCrmUpload}/>
       <div className="section-header">
         <div><div className="eyebrow">CRM Pipeline</div><div className="section-title">Job Tracking Board</div></div>
         <div className="flex g10">
@@ -2630,66 +2752,129 @@ function Pipeline({ jobs }) {
           <button className="btn btn-primary btn-sm">+ Add Role</button>
         </div>
       </div>
-      <div className="grid g4 mb20">
-        {[
-          { l:"Tracked", v:jobs.length },
-          { l:"In Progress", v:jobs.filter(j=>["outreach","applying","interviewing"].includes(j.stage)).length },
-          { l:"Interviews", v:jobs.filter(j=>j.stage==="interviewing").length },
-          { l:"Offers", v:jobs.filter(j=>j.stage==="offer").length },
-        ].map(k=>(
-          <div key={k.l} className="kpi"><div className="kpi-label">{k.l}</div><div className="kpi-val">{k.v}</div></div>
+
+      <div className="tabs mb20">
+        {[{id:"pipeline",l:"Pipeline"},{id:"contacts",l:`Contacts (${contacts.length})`}].map(t=>(
+          <div key={t.id} className={`tab ${crmTab===t.id?"active":""}`} onClick={()=>setCrmTab(t.id)}>{t.l}</div>
         ))}
       </div>
-      <div className="kanban mb20">
-        {stages.map(stage=>{
-          const stageJobs = jobs.filter(j=>j.stage===stage);
-          return (
-            <div key={stage} className="k-col">
-              <div className="k-col-head">
-                <div className="k-col-title">{labels[stage]}</div>
-                <div className="k-count">{stageJobs.length}</div>
-              </div>
-              {stageJobs.map(job=>(
-                <div key={job.id} className="k-card">
-                  <div className="k-card-title">{job.title}</div>
-                  <div className="k-card-sub">{job.firm}</div>
-                  <div className="flex g5 mt8" style={{flexWrap:"wrap"}}>
-                    {(job.tags||[]).map(t=><span key={t} className="tag t-ink">{t}</span>)}
-                  </div>
-                  <div className="k-card-foot">
-                    <span style={{color:"var(--gold)",fontSize:10}}>⏰ {job.deadline}</span>
-                    <span className="mono" style={{color:"var(--green)",fontSize:10}}>{job.match}%</span>
-                  </div>
-                </div>
-              ))}
-              {stageJobs.length === 0 && (
-                <div style={{padding:"18px",textAlign:"center",color:"var(--ink4)",fontSize:11,border:"1.5px dashed var(--border2)",borderRadius:8}}>No roles yet</div>
-              )}
-              <button className="btn btn-ghost btn-xs w-full" style={{justifyContent:"center",marginTop:8}}>+ Add</button>
-            </div>
-          );
-        })}
-      </div>
-      <div className="card">
-        <div className="card-header"><div className="card-title">All Roles</div><button className="btn btn-outline btn-sm" onClick={handleExportCSV}>⬇ Export</button></div>
-        <table className="table">
-          <thead><tr><th>Role</th><th>Firm</th><th>Stage</th><th>Track</th><th>Deadline</th><th>Match</th><th>Cover Letter</th><th>Actions</th></tr></thead>
-          <tbody>
-            {jobs.map(j=>(
-              <tr key={j.id}>
-                <td className="fw6" style={{color:"var(--ink)"}}>{j.title}</td>
-                <td>{j.firm}</td>
-                <td><span className={`tag t-${j.stage==="offer"?"green":j.stage==="interviewing"?"navy":"ink"}`}>{labels[j.stage]}</span></td>
-                <td><span className="tag t-gold">{j.track}</span></td>
-                <td><span className="mono" style={{color:"var(--gold)",fontSize:11}}>{j.deadline}</span></td>
-                <td><span className="mono" style={{color:"var(--green)",fontSize:12}}>{j.match}%</span></td>
-                <td><span className="tag t-ink">Draft</span></td>
-                <td><button className="btn btn-outline btn-xs">Open →</button></td>
-              </tr>
+
+      {crmTab === "pipeline" && (
+        <>
+          <div className="grid g4 mb20">
+            {[
+              { l:"Tracked", v:jobs.length },
+              { l:"In Progress", v:jobs.filter(j=>["outreach","applying","interviewing"].includes(j.stage)).length },
+              { l:"Interviews", v:jobs.filter(j=>j.stage==="interviewing").length },
+              { l:"Offers", v:jobs.filter(j=>j.stage==="offer").length },
+            ].map(k=>(
+              <div key={k.l} className="kpi"><div className="kpi-label">{k.l}</div><div className="kpi-val">{k.v}</div></div>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </div>
+          <div className="kanban mb20">
+            {stages.map(stage=>{
+              const stageJobs = jobs.filter(j=>j.stage===stage);
+              return (
+                <div key={stage} className="k-col">
+                  <div className="k-col-head">
+                    <div className="k-col-title">{labels[stage]}</div>
+                    <div className="k-count">{stageJobs.length}</div>
+                  </div>
+                  {stageJobs.map(job=>(
+                    <div key={job.id} className="k-card">
+                      <div className="k-card-title">{job.title}</div>
+                      <div className="k-card-sub">{job.firm}</div>
+                      <div className="flex g5 mt8" style={{flexWrap:"wrap"}}>
+                        {(job.tags||[]).map(t=><span key={t} className="tag t-ink">{t}</span>)}
+                      </div>
+                      <div className="k-card-foot">
+                        <span style={{color:"var(--gold)",fontSize:10}}>⏰ {job.deadline}</span>
+                        <span className="mono" style={{color:"var(--green)",fontSize:10}}>{job.match}%</span>
+                      </div>
+                    </div>
+                  ))}
+                  {stageJobs.length === 0 && (
+                    <div style={{padding:"18px",textAlign:"center",color:"var(--ink4)",fontSize:11,border:"1.5px dashed var(--border2)",borderRadius:8}}>No roles yet</div>
+                  )}
+                  <button className="btn btn-ghost btn-xs w-full" style={{justifyContent:"center",marginTop:8}}>+ Add</button>
+                </div>
+              );
+            })}
+          </div>
+          <div className="card">
+            <div className="card-header"><div className="card-title">All Roles</div><button className="btn btn-outline btn-sm" onClick={handleExportCSV}>⬇ Export</button></div>
+            <table className="table">
+              <thead><tr><th>Role</th><th>Firm</th><th>Stage</th><th>Track</th><th>Deadline</th><th>Match</th><th>Cover Letter</th><th>Actions</th></tr></thead>
+              <tbody>
+                {jobs.map(j=>(
+                  <tr key={j.id}>
+                    <td className="fw6" style={{color:"var(--ink)"}}>{j.title}</td>
+                    <td>{j.firm}</td>
+                    <td><span className={`tag t-${j.stage==="offer"?"green":j.stage==="interviewing"?"navy":"ink"}`}>{labels[j.stage]}</span></td>
+                    <td><span className="tag t-gold">{j.track}</span></td>
+                    <td><span className="mono" style={{color:"var(--gold)",fontSize:11}}>{j.deadline}</span></td>
+                    <td><span className="mono" style={{color:"var(--green)",fontSize:12}}>{j.match}%</span></td>
+                    <td><span className="tag t-ink">Draft</span></td>
+                    <td><button className="btn btn-outline btn-xs">Open →</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {crmTab === "contacts" && (
+        <div>
+          <div className="card-flat mb16" style={{background:"var(--gold-bg)",border:"1px solid rgba(184,132,63,0.25)"}}>
+            <div className="flex items-c j-between">
+              <div>
+                <div className="fw5 fs12" style={{color:"var(--gold)"}}>📁 Import Contacts</div>
+                <div className="fs11" style={{color:"#7A5A1C"}}>Upload Excel, CSV, PDF, or Word files. AI will parse names, firms, roles, and emails automatically.</div>
+              </div>
+              <button className="btn btn-gold btn-sm" onClick={()=>crmFileRef.current?.click()} disabled={uploading}>
+                {uploading ? "⏳ Processing..." : "⬆ Upload & Parse"}
+              </button>
+            </div>
+          </div>
+          {uploading && <div className="ai-pulse mb16"><div className="dot-spin"/>{uploadLog}</div>}
+          {!uploading && uploadLog && <div className={`alert ${uploadLog.startsWith("✅")?"a-green":"a-gold"} mb16`}>{uploadLog}</div>}
+
+          <div className="card">
+            <div className="card-header">
+              <div>
+                <div className="card-title">📇 Contacts</div>
+                <div className="card-subtitle">{contacts.length} contacts in your CRM</div>
+              </div>
+              <button className="btn btn-outline btn-sm" onClick={() => exportToCSV(contacts.map(c => ({Name:c.name,Firm:c.firm,Role:c.role,Channel:c.channel,Status:c.status,Notes:c.notes})), "contacts_export")}>⬇ Export</button>
+            </div>
+            {contacts.length === 0 ? (
+              <div style={{padding:"40px",textAlign:"center",color:"var(--ink4)"}}>
+                <div style={{fontSize:32,marginBottom:12}}>📇</div>
+                <div className="fw6 fs12 mb8" style={{color:"var(--ink3)"}}>No contacts yet</div>
+                <div className="fs11">Upload an Excel or PDF file to import contacts, or add them manually.</div>
+              </div>
+            ) : (
+              <table className="table">
+                <thead><tr><th>Name</th><th>Firm</th><th>Role</th><th>Channel</th><th>Status</th><th>Notes</th><th>Actions</th></tr></thead>
+                <tbody>
+                  {contacts.map(c=>(
+                    <tr key={c.id}>
+                      <td className="fw6" style={{color:"var(--ink)"}}>{c.name}</td>
+                      <td>{c.firm || "—"}</td>
+                      <td style={{fontSize:12,color:"var(--ink3)"}}>{c.role || "—"}</td>
+                      <td><span className="tag t-blue">{c.channel || "Email"}</span></td>
+                      <td><span className={`tag t-${c.status==="connected"?"green":c.status==="replied"?"gold":"ink"}`}>{c.status || "pending"}</span></td>
+                      <td style={{fontSize:11,color:"var(--ink3)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.notes || "—"}</td>
+                      <td><button className="btn btn-ghost btn-xs" onClick={()=>deleteContactRow(c.id)} style={{color:"var(--red)"}}>✕</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3576,7 +3761,7 @@ Format the output clearly with headers and bullet points. Make it specific to fi
 
   const loadAllJobs = async () => {
     setLoadingJobs(true);
-    const { data } = await supabase.from("jobs").select("id, title, firm, stage, track, location, source, created_at, user_id, match_score, deadline").order("created_at", { ascending: false }).range(0, 200);
+    const { data } = await supabase.from("jobs").select("id, title, firm, stage, track, location, source, created_at, user_id, match_score, deadline, url").order("created_at", { ascending: false }).range(0, 200);
     setAllJobs(data || []);
     setLoadingJobs(false);
   };
@@ -3766,14 +3951,21 @@ Format the output clearly with headers and bullet points. Make it specific to fi
                       <tbody>
                         {allJobs.slice(jobsPage * JOBS_PER_PAGE, (jobsPage + 1) * JOBS_PER_PAGE).map(j => (
                           <tr key={j.id}>
-                            <td className="fw6" style={{color:"var(--ink)", maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{j.title}</td>
+                            <td className="fw6" style={{color:"var(--ink)", maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>
+                              {j.url ? <a href={j.url} target="_blank" rel="noopener noreferrer" style={{color:"var(--ink)",textDecoration:"underline"}}>{j.title}</a> : j.title}
+                            </td>
                             <td>{j.firm}</td>
                             <td><span className="tag t-navy">{j.track === "ib" ? "IB" : j.track === "consulting" ? "Consulting" : "Product"}</span></td>
                             <td style={{fontSize:11, color:"var(--ink3)"}}>{j.location || "—"}</td>
                             <td style={{fontSize:11, color:"var(--ink3)"}}>{j.source || "—"}</td>
                             <td><span className={`tag t-${j.stage === "saved" ? "ink" : j.stage === "offer" ? "green" : "gold"}`}>{j.stage}</span></td>
                             <td className="mono fs11">{new Date(j.created_at).toLocaleDateString()}</td>
-                            <td><button className="btn btn-ghost btn-xs" onClick={() => deleteAdminJob(j.id)} style={{color:"var(--red)"}}>✕</button></td>
+                            <td>
+                              <div className="flex g6">
+                                {j.url && <a href={j.url} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-xs" style={{textDecoration:"none"}}>🔗</a>}
+                                <button className="btn btn-ghost btn-xs" onClick={() => deleteAdminJob(j.id)} style={{color:"var(--red)"}}>✕</button>
+                              </div>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -3908,6 +4100,7 @@ export default function JobSearchOS() {
           location: j.location,
           description: j.description,
           source: j.source,
+          url: j.url,
         })));
       }
       setDbLoaded(true);

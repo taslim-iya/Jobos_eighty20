@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.job-crawl-search]
 verify_jwt = false
+
+[functions.admin-scrape]
+verify_jwt = false

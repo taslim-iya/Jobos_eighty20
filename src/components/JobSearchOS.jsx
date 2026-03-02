@@ -3493,7 +3493,29 @@ function Extension() {
 ══════════════════════════════════════════════════════════════════════════════ */
 function Admin() {
   const { user } = useAuth();
-  const [adminTab, setAdminTab] = useState("playbooks");
+  const [adminTab, setAdminTab] = useState("scrape");
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [scrapeRunning, setScrapeRunning] = useState(false);
+  const [scrapeResult, setScrapeResult] = useState(null);
+
+  useEffect(() => {
+    if (!user) return;
+    supabase.from("user_roles").select("role").eq("user_id", user.id).eq("role", "admin").maybeSingle()
+      .then(({ data }) => setIsAdmin(!!data));
+  }, [user]);
+
+  const runAdminScrape = async () => {
+    setScrapeRunning(true);
+    setScrapeResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("admin-scrape");
+      if (error) throw error;
+      setScrapeResult(data);
+    } catch (err) {
+      setScrapeResult({ error: err.message || "Scrape failed" });
+    }
+    setScrapeRunning(false);
+  };
   const [uploadingTo, setUploadingTo] = useState(null);
   const [uploadResult, setUploadResult] = useState(null);
   const [processing, setProcessing] = useState(false);
@@ -3555,7 +3577,7 @@ Format the output clearly with headers and bullet points. Make it specific to fi
       <div className="grid g16" style={{gridTemplateColumns:"200px 1fr"}}>
         <div className="card-flat" style={{height:"fit-content"}}>
           <div className="label mb10">Sections</div>
-          {[{id:"playbooks",l:"📖 Playbooks"},{id:"templates",l:"📄 Templates"},{id:"questions",l:"🎙 Question Banks"},{id:"rubrics",l:"📊 Rubrics"},{id:"skills",l:"🧠 Skill Taxonomy"},{id:"prompts",l:"🤖 AI Prompts"},{id:"config",l:"⚙️ System Config"}].map(item=>(
+          {[{id:"scrape",l:"🔄 Job Scraper"},{id:"playbooks",l:"📖 Playbooks"},{id:"templates",l:"📄 Templates"},{id:"questions",l:"🎙 Question Banks"},{id:"rubrics",l:"📊 Rubrics"},{id:"skills",l:"🧠 Skill Taxonomy"},{id:"prompts",l:"🤖 AI Prompts"},{id:"config",l:"⚙️ System Config"}].map(item=>(
             <div key={item.id} onClick={()=>setAdminTab(item.id)}
               style={{padding:"8px 12px",borderRadius:7,cursor:"pointer",fontSize:13,color:adminTab===item.id?"var(--navy2)":"var(--ink3)",background:adminTab===item.id?"var(--gold-bg)":"transparent",fontWeight:adminTab===item.id?600:400,marginBottom:2,transition:"all .12s"}}>
               {item.l}
@@ -3599,6 +3621,45 @@ Format the output clearly with headers and bullet points. Make it specific to fi
             </div>
           )}
 
+          {adminTab==="scrape" && (
+            <div className="card">
+              <div className="card-header">
+                <div>
+                  <div className="card-title">🔄 Admin Job Scraper</div>
+                  <div className="card-subtitle">Crawl live jobs and populate all user pipelines based on their profiles</div>
+                </div>
+                {isAdmin && (
+                  <button className="btn btn-gold" onClick={runAdminScrape} disabled={scrapeRunning}>
+                    {scrapeRunning ? "⏳ Scraping..." : "🚀 Run Scrape Now"}
+                  </button>
+                )}
+              </div>
+              {!isAdmin && (
+                <div className="alert a-red mb16">🔒 Admin access required to run scrapes.</div>
+              )}
+              {scrapeRunning && (
+                <div className="ai-pulse mb16"><div className="dot-spin"/>Crawling job boards and populating user pipelines...</div>
+              )}
+              {scrapeResult && !scrapeResult.error && (
+                <div className="alert a-green mb16">
+                  ✅ Scrape complete! Inserted <strong>{scrapeResult.inserted}</strong> new jobs across <strong>{scrapeResult.profiles}</strong> user profiles.
+                </div>
+              )}
+              {scrapeResult?.error && (
+                <div className="alert a-red mb16">⚠ {scrapeResult.error}</div>
+              )}
+              <div className="fs13 t-ink3" style={{lineHeight:1.8}}>
+                <p>This scraper will:</p>
+                <ul style={{paddingLeft:20,marginTop:8}}>
+                  <li>Fetch all user profiles and group by track, level, and location</li>
+                  <li>Search job boards (LinkedIn, Indeed, eFinancialCareers, etc.) using Firecrawl</li>
+                  <li>Filter out expired/closed positions</li>
+                  <li>Insert matched jobs into each user's pipeline (avoiding duplicates)</li>
+                </ul>
+                <p style={{marginTop:12,color:"var(--ink4)"}}>💡 This also runs automatically every week via a scheduled task.</p>
+              </div>
+            </div>
+          )}
           {adminTab==="playbooks" && (
             <div className="card">
               <div className="card-header"><div className="card-title">Manage Playbooks</div><button className="btn btn-primary btn-sm">+ New Playbook</button></div>

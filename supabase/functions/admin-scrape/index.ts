@@ -28,6 +28,9 @@ function cleanText(v: unknown): string {
   return String(v || "").replace(/\s+/g, " ").trim();
 }
 
+const MAX_JOBS_PER_GROUP = 30;
+const JOB_LINK_KEYWORDS = /(job|jobs|career|careers|opening|opportunit|intern|analyst|associate|apply)/i;
+
 async function firecrawlSearch(apiKey: string, query: string) {
   const res = await fetch("https://api.firecrawl.dev/v1/search", {
     method: "POST",
@@ -35,7 +38,7 @@ async function firecrawlSearch(apiKey: string, query: string) {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ query, limit: 50, scrapeOptions: { formats: ["markdown"] } }),
+    body: JSON.stringify({ query, limit: 20 }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return [];
@@ -137,7 +140,7 @@ Deno.serve(async (req) => {
         if (result.status !== "fulfilled") continue;
         for (const row of result.value) {
           const url = cleanText(row.url);
-          if (!url || seenUrls.has(url.toLowerCase())) continue;
+          if (!url || !JOB_LINK_KEYWORDS.test(url) || seenUrls.has(url.toLowerCase())) continue;
           seenUrls.add(url.toLowerCase());
 
           const title = cleanText(row.title || "Job Opening");
@@ -158,18 +161,21 @@ Deno.serve(async (req) => {
             track: group.track,
             level: group.level,
           });
+
+          if (jobs.length >= MAX_JOBS_PER_GROUP) break;
         }
+        if (jobs.length >= MAX_JOBS_PER_GROUP) break;
       }
 
-      console.log(`Found ${jobs.length} unique jobs for group ${key}`);
+      const curatedJobs = jobs.slice(0, MAX_JOBS_PER_GROUP);
+      console.log(`Found ${curatedJobs.length} unique jobs for group ${key}`);
 
       // Insert jobs for each user in this group
       for (const userId of group.userIds) {
-        // Get existing job URLs for this user to avoid duplicates
         const { data: existingJobs } = await admin.from("jobs").select("title, firm").eq("user_id", userId);
         const existingKeys = new Set((existingJobs || []).map(j => `${j.title}|${j.firm}`.toLowerCase()));
 
-        const newJobs = jobs.filter(j => !existingKeys.has(`${j.title}|${j.firm}`.toLowerCase()));
+        const newJobs = curatedJobs.filter(j => !existingKeys.has(`${j.title}|${j.firm}`.toLowerCase()));
 
         if (newJobs.length === 0) continue;
 

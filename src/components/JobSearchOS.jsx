@@ -1880,98 +1880,36 @@ function CVStudio({ jobs }) {
     if (!file) return;
     setUploading(true);
     try {
-      // Read file as text for txt files, or as base64 for AI parsing
       if (file.name.endsWith('.txt')) {
         const text = await file.text();
         setCv(text);
       } else {
-        // For PDF/DOCX, read as base64 and send to AI for text extraction
+        // For PDF/DOCX, send as base64 to the extraction edge function
         const arrayBuffer = await file.arrayBuffer();
-        const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-        const prompt = `Extract the complete text content from this CV/resume file named "${file.name}". 
-The file content is provided as base64. Since you cannot decode binary files directly, I'll provide the filename context.
-
-Based on the filename "${file.name}", this appears to be a CV. Please generate a clean, well-formatted plain text version of a CV that would match the style of an IB/finance professional CV.
-
-Actually, here is what I need you to do: I'm going to give you the raw text content extracted from the file. Format it as a clean CV preserving all sections, bullet points, dates, and details.
-
-Here is the extracted content from the file:
-${file.name.includes('Taslim') ? `Taslim Ahmed
-
-Contact Details
-M: +44-7825-742040
-ta604@jbs.cam.ac.uk
-
-Education
-
-Judge Business School, University of Cambridge, Cambridge, UK
-2025 - 2026
-Reading for MBA degree- GRE: 335/340
-
-Bocconi University, Milan, Italy
-2015 - 2018
-BSc. GPA: 90/110
-
-Professional Experience
-
-Espalier Partners – PE/Search Fund Investor, London, UK
-Nov 2025 – Feb 2026
-Investment Intern
-- Screened 1,300+ UK companies, building tools to support research and achieving 20% outreach response rate
-- Supported live deal processes across sourcing, commercial diligence, and data-room analysis
-- Built financial models to inform IC discussions and led deep dives across four UK B2B services sectors
-
-Eximus Partners – Multi-Asset Investment Firm, Abuja, NG | London, UK | Milan, ITA
-Oct 2018 – August 2025
-Portfolio Manager
-- Conducted fundamental research on U.S., European, Nigerian, Turkish and other EMEA companies, building and maintaining financial models (3-statement, DCF, comps) and valuation frameworks to guide portfolio decisions
-- Managed a $23m benchmark-agnostic portfolio, delivering a 27.3% annualized return through disciplined contrarian value investing, and targeting mispriced growth opportunities in Emerging markets
-- Managed the firm's proprietary long/short portfolio, employing equity and options strategies to generate alpha and hedge directional exposure
-
-Supreme Trust Insurance, Abuja, NG
-Jul 2024 - May 2025
-Investment Manager
-- Led a $320k acquisition with AA Rano, overseeing transaction execution and post-deal integration
-- Directed investments across fixed income and public markets, serving as portfolio manager on $700k float
-
-Uncle Tee's, Abuja, NG
-Apr 2021 - Aug 2022
-Co-Founder
-- Built a 127-person team and scaled the business from 1 to 9 branches, reaching $480k annual sales
-- Achieved a $2m exit at 5.7x MOIC
-
-Sigma Securities Limited, Abuja, NG
-Mar 2013 - Sep 2013
-Equity Research Analyst (Intern)
-- Built valuation models and earnings forecasts for Nigerian and U.S. financial institutions
-
-Extracurricular Activities
-
-University of Cambridge Search Fund/ETA Club
-Cambridge, UK
-President
-Sep 2025 - Sep 2026
-- Founded and led the ETA community at Cambridge, building a platform connecting MBA students with search fund investors, operators, and acquisition opportunities
-
-Youth Compass Foundation / TAI Foundation
-Abuja, NG
-Founder
-Sep 2018 - Present
-- Provided scholarships to over 1,200 kids and empowered 8,840 youth and secured a $70,000 CEMS partnership
-
-Additional Information
-Languages: English, Arabic (Beginner), Hausa (Fluent), Fulani (Fluent), Italian (Beginner)
-Relevant Skills & Experiences: Stock pitch at Best Ideas 2018 (January & June) (MOI Global); Citadel 2025 Member of SumZero Investment Community
-Interests: Composing and producing music producing 11 songs across streaming platforms; Writing: published one book and multiple short stories; Geopolitics` : `Please extract text from this uploaded CV file. Parse it into clean sections.`}
-
-Return ONLY the clean CV text, no commentary.`;
-        const result = await callClaude(prompt, "Extract and return the CV text exactly as provided, maintaining all formatting, sections, and bullet points. Return ONLY the CV content.");
-        setCv(result);
+        const bytes = new Uint8Array(arrayBuffer);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        const base64 = btoa(binary);
+        
+        const { data, error } = await supabase.functions.invoke('extract-document', {
+          body: { base64, fileName: file.name, mimeType: file.type }
+        });
+        
+        if (error) throw new Error(error.message || 'Extraction failed');
+        if (data?.error) throw new Error(data.error);
+        if (data?.text) {
+          setCv(data.text);
+        } else {
+          throw new Error('No text extracted from document');
+        }
       }
     } catch (err) {
       console.error("CV upload failed:", err);
-      alert("Failed to process CV file. Please try a .txt file or paste your CV directly.");
+      alert("Failed to process CV file: " + (err.message || "Unknown error. Try a .txt file or paste directly."));
     }
+    setUploading(false);
     setUploading(false);
     if (cvFileRef.current) cvFileRef.current.value = "";
   };

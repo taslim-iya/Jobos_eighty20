@@ -2023,120 +2023,203 @@ Return the full tailored CV text only, no commentary.`;
   const stepClass = (n) => n < clStep ? "step-done" : n === clStep ? "step-active" : "step-inactive";
 
   // ── Text-based PDF export (small file, crisp text, proper alignment) ──
+  // For CVs: always fits on one page by auto-scaling font sizes down if needed
+  // For cover letters: allows multi-page
   const exportPDF = (content, filename) => {
     if (!content) return;
-    const pdf = new jsPDF("p", "mm", "a4");
-    const margin = { top: 25, left: 25, right: 25, bottom: 20 };
+    const isCV = !filename.includes("cover_letter");
+
+    const margin = { top: 20, left: 22, right: 22, bottom: 15 };
     const pageW = 210 - margin.left - margin.right;
     const pageH = 297 - margin.top - margin.bottom;
 
     const lines = content.split("\n");
     const sectionHeaders = ["education","professional experience","extracurricular activities","additional information","work experience","experience","leadership","skills","interests","certifications","awards","contact details","projects","summary","objective"];
 
+    // Measure total height at a given base font size
+    const measureHeight = (basePt) => {
+      const bulletPt = basePt;
+      const headerPt = basePt + 1;
+      const namePt = basePt + 4;
+      const lineH = basePt * 0.38; // approximate mm per line at this pt size
+      const bulletLineH = bulletPt * 0.38;
+      let h = 0;
+      let nameDetected = false;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) { h += 1.5; continue; }
+        const lower = line.toLowerCase();
+        const isSectionHeader = sectionHeaders.some(x => lower === x || lower.startsWith(x + " "));
+        const isBullet = /^[-•□▪►▸●◦]\s*/.test(line);
+        const dateMatch = line.match(/((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{4}.*$|\d{4}\s*[-–—]\s*(?:\d{4}|Present|Current))/i);
+
+        if (!nameDetected && i < 3 && !isBullet) {
+          if (lower.includes("@") || lower.startsWith("m:") || lower.startsWith("+") || /^\d/.test(lower)) {
+            h += lineH + 0.5;
+          } else if (isSectionHeader) {
+            nameDetected = true;
+            h += headerPt * 0.38 + 4;
+          } else {
+            h += namePt * 0.38 + 1;
+            nameDetected = true;
+          }
+          continue;
+        }
+
+        if (i < 6 && (lower.includes("@") || lower.startsWith("m:") || lower.startsWith("+"))) {
+          h += lineH + 0.5;
+          continue;
+        }
+
+        if (isSectionHeader) {
+          h += 2 + headerPt * 0.38 + 4;
+          continue;
+        }
+
+        if (isBullet) {
+          const bullet = line.replace(/^[-•□▪►▸●◦]\s*/, "");
+          const estCharsPerLine = Math.floor((pageW - 8) / (bulletPt * 0.18));
+          const wrapLines = Math.max(1, Math.ceil(bullet.length / estCharsPerLine));
+          h += wrapLines * bulletLineH + 0.8;
+          continue;
+        }
+
+        if (dateMatch) {
+          h += lineH + 1;
+          continue;
+        }
+
+        if (line.length < 80 && !line.includes(".") && i > 3) {
+          h += lineH + 0.5;
+          continue;
+        }
+
+        const estCharsPerLine = Math.floor(pageW / (basePt * 0.18));
+        const wrapLines = Math.max(1, Math.ceil(line.length / estCharsPerLine));
+        h += wrapLines * lineH + 0.5;
+      }
+      return h;
+    };
+
+    // For CVs, find the largest font size (between 6pt and 10pt) that fits one page
+    let baseFontSize = 10;
+    if (isCV) {
+      for (let pt = 10; pt >= 6; pt -= 0.5) {
+        if (measureHeight(pt) <= pageH) {
+          baseFontSize = pt;
+          break;
+        }
+        baseFontSize = pt;
+      }
+    }
+
+    const pdf = new jsPDF("p", "mm", "a4");
     let y = margin.top;
     let nameDetected = false;
 
-    const addPage = () => { pdf.addPage(); y = margin.top; };
-    const checkPage = (needed) => { if (y + needed > margin.top + pageH) addPage(); };
+    const lineH = baseFontSize * 0.38;
+    const addPage = () => { if (!isCV) { pdf.addPage(); y = margin.top; } };
+    const checkPage = (needed) => { if (!isCV && y + needed > margin.top + pageH) addPage(); };
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
-      if (!line) { y += 2; continue; }
+      if (!line) { y += 1.5; continue; }
       const lower = line.toLowerCase();
       const isSectionHeader = sectionHeaders.some(h => lower === h || lower.startsWith(h + " "));
       const isBullet = /^[-•□▪►▸●◦]\s*/.test(line);
       const dateMatch = line.match(/((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{4}.*$|\d{4}\s*[-–—]\s*(?:\d{4}|Present|Current))/i);
 
-      // Name (first non-contact line)
       if (!nameDetected && i < 3 && !isBullet) {
         if (lower.includes("@") || lower.startsWith("m:") || lower.startsWith("+") || /^\d/.test(lower)) {
           checkPage(5);
-          pdf.setFont("times", "normal"); pdf.setFontSize(10);
-          pdf.text(line, 105, y, { align: "center" }); y += 4;
+          pdf.setFont("times", "normal"); pdf.setFontSize(baseFontSize);
+          pdf.text(line, 105, y, { align: "center" }); y += lineH + 0.5;
         } else if (isSectionHeader) {
           nameDetected = true;
           checkPage(8);
-          pdf.setFont("times", "bold"); pdf.setFontSize(11);
+          pdf.setFont("times", "bold"); pdf.setFontSize(baseFontSize + 1);
           pdf.text(line.toUpperCase(), margin.left, y);
           y += 1;
-          pdf.setDrawColor(0); pdf.setLineWidth(0.4);
+          pdf.setDrawColor(0); pdf.setLineWidth(0.3);
           pdf.line(margin.left, y, margin.left + pageW, y);
-          y += 5;
+          y += 4;
         } else {
-          pdf.setFont("times", "bold"); pdf.setFontSize(14);
-          pdf.text(line, 105, y, { align: "center" }); y += 5;
+          pdf.setFont("times", "bold"); pdf.setFontSize(baseFontSize + 4);
+          pdf.text(line, 105, y, { align: "center" }); y += (baseFontSize + 4) * 0.38 + 1;
           nameDetected = true;
         }
         continue;
       }
 
-      // Contact lines near top
       if (i < 6 && (lower.includes("@") || lower.startsWith("m:") || lower.startsWith("+"))) {
         checkPage(5);
-        pdf.setFont("times", "normal"); pdf.setFontSize(10);
-        pdf.text(line, 105, y, { align: "center" }); y += 4;
+        pdf.setFont("times", "normal"); pdf.setFontSize(baseFontSize);
+        pdf.text(line, 105, y, { align: "center" }); y += lineH + 0.5;
         continue;
       }
 
-      // Section headers
       if (isSectionHeader) {
         checkPage(10);
-        y += 3;
-        pdf.setFont("times", "bold"); pdf.setFontSize(11);
+        y += 2;
+        pdf.setFont("times", "bold"); pdf.setFontSize(baseFontSize + 1);
         pdf.text(line.toUpperCase(), margin.left, y);
         y += 1;
-        pdf.setDrawColor(0); pdf.setLineWidth(0.4);
+        pdf.setDrawColor(0); pdf.setLineWidth(0.3);
         pdf.line(margin.left, y, margin.left + pageW, y);
-        y += 5;
+        y += 4;
         continue;
       }
 
-      // Bullet points
       if (isBullet) {
         const bullet = line.replace(/^[-•□▪►▸●◦]\s*/, "");
-        pdf.setFont("times", "normal"); pdf.setFontSize(10);
+        pdf.setFont("times", "normal"); pdf.setFontSize(baseFontSize);
         const wrapped = pdf.splitTextToSize(bullet, pageW - 8);
-        checkPage(wrapped.length * 4 + 1);
+        checkPage(wrapped.length * lineH + 0.8);
         pdf.text("▪", margin.left + 3, y);
         pdf.text(wrapped, margin.left + 8, y);
-        y += wrapped.length * 4 + 1;
+        y += wrapped.length * lineH + 0.8;
         continue;
       }
 
-      // Lines with dates → company/role line
       if (dateMatch) {
         const dateStr = dateMatch[0].trim();
         const mainText = line.replace(dateStr, "").replace(/[,|·\s]+$/, "").trim();
         checkPage(6);
         if (mainText.length > 2) {
-          pdf.setFont("times", "bold"); pdf.setFontSize(10);
+          pdf.setFont("times", "bold"); pdf.setFontSize(baseFontSize);
           pdf.text(mainText, margin.left, y);
           pdf.setFont("times", "normal");
           pdf.text(dateStr, margin.left + pageW, y, { align: "right" });
         } else {
-          pdf.setFont("times", "normal"); pdf.setFontSize(10);
+          pdf.setFont("times", "normal"); pdf.setFontSize(baseFontSize);
           pdf.text(dateStr, margin.left + pageW, y, { align: "right" });
         }
-        y += 5;
+        y += lineH + 1;
         continue;
       }
 
-      // Short lines without periods → sub-header/title
       if (line.length < 80 && !line.includes(".") && i > 3) {
         checkPage(6);
-        pdf.setFont("times", "bolditalic"); pdf.setFontSize(10);
+        pdf.setFont("times", "bolditalic"); pdf.setFontSize(baseFontSize);
         const wrapped = pdf.splitTextToSize(line, pageW);
         pdf.text(wrapped, margin.left, y);
-        y += wrapped.length * 4 + 1;
+        y += wrapped.length * lineH + 0.5;
         continue;
       }
 
-      // Regular text
-      pdf.setFont("times", "normal"); pdf.setFontSize(10);
+      pdf.setFont("times", "normal"); pdf.setFontSize(baseFontSize);
       const wrapped = pdf.splitTextToSize(line, pageW);
-      checkPage(wrapped.length * 4 + 1);
+      checkPage(wrapped.length * lineH + 0.5);
       pdf.text(wrapped, margin.left, y);
-      y += wrapped.length * 4 + 1;
+      y += wrapped.length * lineH + 0.5;
+    }
+
+    // For CVs, remove any extra pages that shouldn't exist
+    if (isCV && pdf.getNumberOfPages() > 1) {
+      while (pdf.getNumberOfPages() > 1) {
+        pdf.deletePage(pdf.getNumberOfPages());
+      }
     }
 
     pdf.save(filename);

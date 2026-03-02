@@ -1570,11 +1570,7 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
           <div className="eyebrow">Job Discovery</div>
           <div className="section-title">Find & Match Roles</div>
         </div>
-        <div className="flex items-c g10">
-          <button className="btn btn-outline" onClick={runWebsiteScan} disabled={scanning}>
-            {scanning ? "🔄 Scanning..." : "🌐 Scan My Websites"}
-          </button>
-        </div>
+      
       </div>
 
       {/* Profile Filters */}
@@ -1841,22 +1837,7 @@ function WebsiteManager() {
         <div><div className="eyebrow">Website Manager</div><div className="section-title">Job Scanning Targets</div></div>
         <button className="btn btn-primary" onClick={()=>setAdding(true)}>+ Add Website</button>
       </div>
-      <div className="alert a-blue mb20">🤖 <span>AI scans each website using intelligent keyword matching for your chosen track and location.</span></div>
-      <div className="card-flat mb16">
-        <div className="flex items-c g12 flex-wrap">
-          <div style={{fontSize:12,fontWeight:500,color:"var(--ink3)"}}>Scan for:</div>
-          <select className="input" style={{width:160}} value={newTrack} onChange={e=>setNewTrack(e.target.value)}>
-            <option value="ib">Investment Banking</option><option value="consulting">Consulting</option><option value="product">Product</option>
-          </select>
-          <select className="input" style={{width:160}} value={newLocation} onChange={e=>setNewLocation(e.target.value)}>
-            <option value="">All Locations</option><option value="London">London</option><option value="New York">New York</option>
-            <option value="Hong Kong">Hong Kong</option><option value="Singapore">Singapore</option><option value="Dubai">Dubai</option>
-            <option value="Frankfurt">Frankfurt</option><option value="Paris">Paris</option><option value="Chicago">Chicago</option>
-            <option value="San Francisco">San Francisco</option><option value="Toronto">Toronto</option><option value="Sydney">Sydney</option>
-          </select>
-          <button className="btn btn-outline btn-sm" onClick={()=>sites.forEach(s=>scanSite(s))}>🔄 Scan All</button>
-        </div>
-      </div>
+      <div className="alert a-blue mb20">🤖 <span>Jobs are automatically scraped weekly by the admin and populated based on your profile. You can manage which websites to track below.</span></div>
       {adding && (
         <div className="card mb20">
           <div className="card-header"><div className="card-title">Add New Website</div><button className="btn btn-ghost btn-sm" onClick={()=>setAdding(false)}>✕</button></div>
@@ -1878,7 +1859,6 @@ function WebsiteManager() {
               <div className="flex items-c g8">
                 <span className="tag t-ink">{site.freq}</span><div className="site-meta">Last: {site.lastScanned}</div>
                 {site.jobsFound > 0 && <span className="tag t-green">{site.jobsFound} jobs</span>}
-                <button className="btn btn-outline btn-xs" onClick={()=>scanSite(site)} disabled={scanning === site.id}>{scanning === site.id ? "🔄" : "Scan"}</button>
                 <button className="btn btn-ghost btn-xs" onClick={()=>deleteSiteHandler(site.id)} style={{color:"var(--red)"}}>✕</button>
               </div>
             </div>

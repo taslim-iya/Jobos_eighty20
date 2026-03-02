@@ -2844,13 +2844,14 @@ Milestone: "${milestone.title}" (${milestone.week})
 Description: ${milestone.desc}
 
 Provide a comprehensive breakdown with:
-1. **Day-by-Day Action Plan** — specific tasks for each day of this period
-2. **Key Resources** — books, websites, courses, tools to use
-3. **Common Mistakes** — what candidates typically get wrong
-4. **Success Metrics** — how to know you've completed this properly
-5. **Pro Tips** — insider knowledge from successful candidates
+1. Day-by-Day Action Plan — specific tasks for each day of this period
+2. Key Resources — books, websites, courses, tools to use
+3. Common Mistakes — what candidates typically get wrong
+4. Success Metrics — how to know you've completed this properly
+5. Pro Tips — insider knowledge from successful candidates
 
-Be specific to ${PLAYBOOKS[sel].name}. Use concrete examples and metrics.`;
+Be specific to ${PLAYBOOKS[sel].name}. Use concrete examples and metrics.
+IMPORTANT: Do NOT use markdown formatting like **, ##, ###, ***, ---, or any other markdown syntax. Use plain text only. Use line breaks and indentation for structure.`;
       const result = await callClaude(prompt);
       setDeepDiveContent(result);
     } catch { setDeepDiveContent("Failed to load detailed content. Please try again."); }
@@ -2872,12 +2873,46 @@ Be specific to ${PLAYBOOKS[sel].name}. Use concrete examples and metrics.`;
           <div className="ai-pulse"><div className="dot-spin"/>Generating detailed guide for "{deepDive.title}"...</div>
         ) : (
           <div className="card">
-            <div style={{fontFamily:"Sora,sans-serif",fontSize:13,lineHeight:1.8,color:"var(--ink2)",whiteSpace:"pre-wrap"}}>
-              {deepDiveContent.split('\n').map((line, i) => {
-                if (line.startsWith('# ')) return <h2 key={i} style={{fontFamily:"Cormorant Garamond,serif",fontSize:22,fontWeight:700,color:"var(--ink)",marginTop:20,marginBottom:10}}>{line.slice(2)}</h2>;
-                if (line.startsWith('## ')) return <h3 key={i} style={{fontFamily:"Cormorant Garamond,serif",fontSize:18,fontWeight:700,color:"var(--ink)",marginTop:16,marginBottom:8}}>{line.slice(3)}</h3>;
-                if (line.match(/^\*\*(.*?)\*\*/)) return <div key={i} style={{marginBottom:6}} dangerouslySetInnerHTML={{__html:line.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--ink)">$1</strong>')}}/>;
-                if (line.startsWith('- ')) return <div key={i} style={{paddingLeft:16,marginBottom:4}}>• {line.slice(2)}</div>;
+            <div style={{fontFamily:"Sora,sans-serif",fontSize:13,lineHeight:1.8,color:"var(--ink2)"}}>
+              {deepDiveContent.split('\n').map((rawLine, i) => {
+                // Strip all markdown syntax
+                let line = rawLine
+                  .replace(/^#{1,6}\s+/g, '')       // headers
+                  .replace(/\*\*\*(.*?)\*\*\*/g, '$1') // bold+italic
+                  .replace(/\*\*(.*?)\*\*/g, '$1')   // bold
+                  .replace(/\*(.*?)\*/g, '$1')        // italic
+                  .replace(/^---+$/g, '')             // horizontal rules
+                  .replace(/`(.*?)`/g, '$1')          // inline code
+                  .trim();
+                
+                if (!line) return <div key={i} style={{height:8}}/>;
+                
+                // Section headers: lines that are short, no period, and follow a blank line
+                const isHeader = (line.length < 60 && !line.startsWith('-') && !line.startsWith('•') && !line.match(/^\d+\./) && 
+                  (rawLine.match(/^#{1,6}\s/) || (line.endsWith(':') || (line.length < 40 && !line.includes('.')))));
+                
+                if (isHeader && line.length > 2) {
+                  return <div key={i} style={{fontFamily:"Cormorant Garamond,serif",fontSize:18,fontWeight:700,color:"var(--ink)",marginTop:20,marginBottom:8,borderBottom:"1px solid var(--border2)",paddingBottom:6}}>{line.replace(/:$/, '')}</div>;
+                }
+                
+                // Bullet points
+                if (line.startsWith('- ') || line.startsWith('• ')) {
+                  return <div key={i} style={{paddingLeft:20,marginBottom:5,position:"relative"}}>
+                    <span style={{position:"absolute",left:6,color:"var(--gold)"}}>▪</span>
+                    {line.slice(2)}
+                  </div>;
+                }
+                
+                // Numbered items
+                if (line.match(/^\d+\.\s/)) {
+                  const num = line.match(/^(\d+)\./)[1];
+                  const text = line.replace(/^\d+\.\s*/, '');
+                  return <div key={i} style={{paddingLeft:20,marginBottom:5,position:"relative"}}>
+                    <span style={{position:"absolute",left:2,fontFamily:"JetBrains Mono,monospace",fontSize:11,color:"var(--gold)",fontWeight:600}}>{num}.</span>
+                    {text}
+                  </div>;
+                }
+                
                 return <div key={i} style={{marginBottom:4}}>{line}</div>;
               })}
             </div>

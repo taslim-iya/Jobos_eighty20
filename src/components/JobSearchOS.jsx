@@ -3488,9 +3488,26 @@ function Admin() {
     setScrapeRunning(true);
     setScrapeResult(null);
     try {
-      const { data, error } = await supabase.functions.invoke("admin-scrape", { body: {} });
-      if (error) throw new Error(error.message || JSON.stringify(error));
-      setScrapeResult(data);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      if (!accessToken) throw new Error("No active session. Please sign in again.");
+
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-scrape`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+        body: JSON.stringify({}),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || payload?.message || `Scrape failed (${response.status})`);
+      }
+
+      setScrapeResult(payload);
     } catch (err) {
       setScrapeResult({ error: err.message || "Scrape failed" });
     }

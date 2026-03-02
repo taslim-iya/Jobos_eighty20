@@ -1413,10 +1413,19 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
       const prompt = `Search for current, real job openings in ${trackName} for ${levelFilter === "undergrad" ? "undergraduates/graduates/summer analysts" : "experienced professionals"} in ${locationFilter || "major financial hubs (London, New York, Hong Kong)"}.
 Keywords: ${trackKw[trackFilter] || trackKw.ib}.
 
-Return ONLY a valid JSON array of 6-10 real job postings found online:
-[{"title":"...","firm":"...","location":"...","deadline":"...","description":"...(2 sentences max)","match":85,"tags":["tag1","tag2"],"source":"website name","url":"https://careers.example.com/job/..."}]
+Search across these job boards: LinkedIn Jobs, Indeed, UK Trackr, eFinancialCareers, Glassdoor, Bright Network, and company career pages.
 
-Use real company names. Be realistic about deadlines and descriptions.`;
+CRITICAL URL RULES - every job MUST have a real, working "url" field. Construct URLs using these patterns:
+- LinkedIn: https://www.linkedin.com/jobs/search/?keywords=JOB+TITLE+FIRM&location=LOCATION
+- Indeed: https://www.indeed.co.uk/jobs?q=JOB+TITLE+FIRM&l=LOCATION (use .co.uk for UK, .com for US)
+- Company careers: use real career page domains you know (e.g. https://careers.jpmorgan.com, https://www.goldmansachs.com/careers, https://careers.mckinsey.com)
+- eFinancialCareers: https://www.efinancialcareers.com/jobs-search?query=JOB+TITLE
+- Glassdoor: https://www.glassdoor.co.uk/Job/LOCATION-JOB-TITLE-jobs-SRCH_IL.htm
+
+Return ONLY a valid JSON array of 6-10 real job postings:
+[{"title":"...","firm":"...","location":"...","deadline":"...","description":"...(2 sentences max)","match":85,"tags":["tag1","tag2"],"source":"LinkedIn","url":"https://..."}]
+
+Use real company names. Every job MUST have a url pointing to a real job board search or company careers page.`;
       
       const result = await callClaude(prompt, "You are a job search assistant. Return ONLY valid JSON array. No markdown, no explanation.", true);
       const clean = result.replace(/```json|```/g, "").trim();
@@ -1461,18 +1470,20 @@ Use real company names. Be realistic about deadlines and descriptions.`;
 Related keywords: ${keywords}.
 Focus on ${trackFilter === "ib" ? "investment banking" : trackFilter === "consulting" ? "management consulting" : "product management"} roles for ${levelFilter === "undergrad" ? "undergraduates/recent graduates/summer analysts/interns" : "experienced professionals/lateral hires/associates/VPs"} in ${locationFilter || "major financial centers"}.
 
-CRITICAL: For each job, the "url" field MUST be a real, working application link. Use these URL patterns:
-- LinkedIn: https://www.linkedin.com/jobs/search/?keywords=JOBTITLE+FIRM
-- Indeed: https://www.indeed.com/jobs?q=JOBTITLE+FIRM&l=LOCATION
-- Glassdoor: https://www.glassdoor.com/Job/LOCATION-JOBTITLE-jobs-SRCH_IL.htm
-- Company careers pages: https://FIRM.com/careers (use real company career page URLs when you know them, e.g. https://careers.jpmorgan.com, https://www.goldmansachs.com/careers)
+Search across: LinkedIn Jobs, Indeed, UK Trackr, eFinancialCareers, Glassdoor, company career pages.
+
+CRITICAL URL RULES - every job MUST have a real, working "url" field. Construct URLs using these patterns:
+- LinkedIn: https://www.linkedin.com/jobs/search/?keywords=JOB+TITLE+FIRM&location=LOCATION
+- Indeed: https://www.indeed.co.uk/jobs?q=JOB+TITLE+FIRM&l=LOCATION (use .co.uk for UK, .com for US)
+- Company careers: use real career page domains (e.g. https://careers.jpmorgan.com, https://www.goldmansachs.com/careers, https://careers.mckinsey.com)
+- eFinancialCareers: https://www.efinancialcareers.com/jobs-search?query=JOB+TITLE
 
 Return ONLY a valid JSON array, no other text:
 [
-  {"title": "...", "firm": "...", "location": "...", "deadline": "...", "description": "...(2 sentences)", "url": "REAL_URL_FROM_ABOVE_PATTERNS", "match": (70-99 number), "tags": ["tag1","tag2"]}
+  {"title": "...", "firm": "...", "location": "...", "deadline": "...", "description": "...(2 sentences)", "url": "REAL_URL", "match": (70-99 number), "tags": ["tag1","tag2"]}
 ]
 
-Find 3-5 real job postings. Use actual firm names. Every job MUST have a working url linking to a real job board or company careers page.`;
+Find 5-8 real job postings. Use actual firm names. Every job MUST have a working url.`;
 
       const result = await callClaude(prompt, "You are a job search assistant. Search the web and return ONLY valid JSON array. No markdown, no explanation.", true);
       try {

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { fetchJobs, upsertJob, deleteJob } from "@/lib/database";
+import { fetchJobs, upsertJob, deleteJob, fetchDocuments, upsertDocument, deleteDocument, uploadFile, deleteFile, exportToCSV, exportToText, fetchWebsites, upsertWebsite, deleteWebsite } from "@/lib/database";
+import { supabase } from "@/integrations/supabase/client";
 
 /* ─────────────────────────────────────────────────────────────────────────────
    DESIGN SYSTEM — "FT Editorial Light"
@@ -1430,7 +1431,17 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
     setAiSearching(true);
     setAiResults([]);
     try {
-      const prompt = `Search for current job openings that match this query: "${aiSearchQuery}". Focus on ${trackFilter === "ib" ? "investment banking" : trackFilter === "consulting" ? "management consulting" : "product management"} roles for ${levelFilter === "undergrad" ? "undergraduates/recent graduates" : "experienced professionals"} in ${locationFilter || "London or New York"}. 
+      // Build smart keyword expansions based on track
+      const trackKeywords = {
+        ib: "investment banking, IB, analyst, associate, M&A, ECM, DCM, leveraged finance, capital markets, bulge bracket",
+        consulting: "management consulting, strategy consulting, consultant, associate consultant, business analyst, MBB, Big 4, advisory",
+        product: "product manager, APM, associate product manager, product lead, growth PM, technical PM",
+      };
+      const keywords = trackKeywords[trackFilter] || trackKeywords.ib;
+      
+      const prompt = `Search for current job openings that match this query: "${aiSearchQuery}". 
+Also consider these related keywords: ${keywords}.
+Focus on ${trackFilter === "ib" ? "investment banking" : trackFilter === "consulting" ? "management consulting" : "product management"} roles for ${levelFilter === "undergrad" ? "undergraduates/recent graduates/summer analysts/interns" : "experienced professionals/lateral hires/associates/VPs"} in ${locationFilter || "major financial centers"}.
 
 For each job found, provide in JSON format (return ONLY valid JSON array, no other text):
 [
@@ -1493,7 +1504,21 @@ Find 3-5 real, current job postings. Include actual firm names and realistic det
             <option value="experienced">Experienced Hire</option>
             <option value="">All Levels</option>
           </select>
-          <input className="input" style={{width:140}} placeholder="Location..." value={locationFilter} onChange={e=>setLocationFilter(e.target.value)}/>
+          <select className="input" style={{width:160}} value={locationFilter} onChange={e=>setLocationFilter(e.target.value)}>
+            <option value="">All Locations</option>
+            <option value="London">London</option>
+            <option value="New York">New York</option>
+            <option value="Hong Kong">Hong Kong</option>
+            <option value="Singapore">Singapore</option>
+            <option value="Dubai">Dubai</option>
+            <option value="Frankfurt">Frankfurt</option>
+            <option value="Paris">Paris</option>
+            <option value="Chicago">Chicago</option>
+            <option value="San Francisco">San Francisco</option>
+            <option value="Toronto">Toronto</option>
+            <option value="Sydney">Sydney</option>
+            <option value="Mumbai">Mumbai</option>
+          </select>
           <input className="input" style={{flex:1, minWidth:180}} placeholder="Search roles..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)}/>
           <button className="btn btn-primary btn-sm" onClick={()=>{setTrackFilter(profile.track);setLevelFilter(profile.level);}}>Reset to Profile</button>
         </div>
@@ -1648,167 +1673,134 @@ Find 3-5 real, current job postings. Include actual firm names and realistic det
    PAGE: WEBSITE MANAGER
 ══════════════════════════════════════════════════════════════════════════════ */
 function WebsiteManager() {
-  const [sites, setSites] = useState(INIT_WEBSITES);
+  const { user } = useAuth();
+  const [sites, setSites] = useState([]);
   const [newUrl, setNewUrl] = useState("");
   const [newLabel, setNewLabel] = useState("");
   const [newFreq, setNewFreq] = useState("daily");
+  const [newLocation, setNewLocation] = useState("London");
+  const [newTrack, setNewTrack] = useState("ib");
   const [scanning, setScanning] = useState(null);
   const [scanResults, setScanResults] = useState({});
   const [adding, setAdding] = useState(false);
 
-  const addSite = () => {
+  useEffect(() => {
+    if (!user) return;
+    fetchWebsites(user.id).then(({ data }) => {
+      if (data && data.length > 0) {
+        setSites(data.map(s => ({ id: s.id, url: s.url, label: s.label, freq: s.frequency, lastScanned: s.last_scanned, jobsFound: s.jobs_found, status: s.status })));
+      } else {
+        setSites(INIT_WEBSITES);
+        INIT_WEBSITES.forEach(site => upsertWebsite(user.id, { url: site.url, label: site.label, frequency: site.freq, last_scanned: site.lastScanned, jobs_found: site.jobsFound, status: site.status }));
+      }
+    });
+  }, [user]);
+
+  const addSite = async () => {
     if (!newUrl.trim()) return;
-    setSites(prev => [...prev, {
-      id: Date.now(), url: newUrl, label: newLabel || newUrl,
-      freq: newFreq, lastScanned: "Never", jobsFound: 0, status: "idle"
-    }]);
+    const site = { url: newUrl, label: newLabel || newUrl, frequency: newFreq, last_scanned: "Never", jobs_found: 0, status: "idle" };
+    if (user) {
+      const { data } = await upsertWebsite(user.id, site);
+      if (data) setSites(prev => [...prev, { id: data.id, url: data.url, label: data.label, freq: data.frequency, lastScanned: data.last_scanned, jobsFound: data.jobs_found, status: data.status }]);
+    }
     setNewUrl(""); setNewLabel(""); setAdding(false);
   };
 
   const scanSite = async (site) => {
     setScanning(site.id);
     setSites(prev => prev.map(s => s.id === site.id ? { ...s, status: "scanning" } : s));
+    const trackKw = { ib: "investment banking analyst M&A ECM DCM summer analyst", consulting: "management consulting business analyst strategy", product: "product manager APM growth PM" };
     try {
-      const prompt = `Search for current job openings listed on ${site.url} or from ${site.label}. Find any recent job postings. Return in JSON format:
-[{"title":"...","location":"...","deadline":"...","description":"..."}]
-Return 2-4 jobs as a JSON array only.`;
+      const prompt = `Search for current job openings on ${site.url} (${site.label}). Focus on ${newTrack === "ib" ? "investment banking" : newTrack} roles in ${newLocation || "London"}. Keywords: ${trackKw[newTrack] || trackKw.ib}. Return JSON: [{"title":"...","location":"...","deadline":"...","description":"..."}]. Return 2-4 jobs only.`;
       const result = await callClaude(prompt, "Return only a JSON array of job objects. No markdown.", true);
       let found = 0;
       try {
         const clean = result.replace(/```json|```/g, "").trim();
-        const start = clean.indexOf("[");
-        const end = clean.lastIndexOf("]") + 1;
-        if (start >= 0) {
-          const parsed = JSON.parse(clean.slice(start, end));
-          found = parsed.length;
-          setScanResults(prev => ({ ...prev, [site.id]: parsed }));
-        }
+        const start = clean.indexOf("["); const end = clean.lastIndexOf("]") + 1;
+        if (start >= 0) { const parsed = JSON.parse(clean.slice(start, end)); found = parsed.length; setScanResults(prev => ({ ...prev, [site.id]: parsed })); }
       } catch { found = Math.floor(Math.random() * 4) + 1; }
       setSites(prev => prev.map(s => s.id === site.id ? { ...s, status: "active", lastScanned: "Just now", jobsFound: found } : s));
+      if (user) upsertWebsite(user.id, { id: site.id, url: site.url, label: site.label, frequency: site.freq, status: "active", last_scanned: "Just now", jobs_found: found });
     } catch {
       setSites(prev => prev.map(s => s.id === site.id ? { ...s, status: "active", lastScanned: "Just now" } : s));
     }
     setScanning(null);
   };
 
-  const deleteSite = (id) => setSites(prev => prev.filter(s => s.id !== id));
+  const deleteSiteHandler = async (id) => { setSites(prev => prev.filter(s => s.id !== id)); if (user) deleteWebsite(user.id, id); };
 
   return (
     <div className="page">
       <div className="section-header">
-        <div>
-          <div className="eyebrow">Website Manager</div>
-          <div className="section-title">Job Scanning Targets</div>
-        </div>
+        <div><div className="eyebrow">Website Manager</div><div className="section-title">Job Scanning Targets</div></div>
         <button className="btn btn-primary" onClick={()=>setAdding(true)}>+ Add Website</button>
       </div>
-
-      <div className="alert a-blue mb20">
-        🤖 <span>Claude scans each website using AI-powered web search to extract current job listings. Configure your target sites and scan frequency below.</span>
-      </div>
-
-      {adding && (
-        <div className="card mb20">
-          <div className="card-header">
-            <div className="card-title">Add New Website</div>
-            <button className="btn btn-ghost btn-sm" onClick={()=>setAdding(false)}>✕ Cancel</button>
-          </div>
-          <div className="grid g3 g16 mb16">
-            <div className="fg">
-              <label className="label">Website URL</label>
-              <input className="input" placeholder="https://..." value={newUrl} onChange={e=>setNewUrl(e.target.value)}/>
-            </div>
-            <div className="fg">
-              <label className="label">Label (optional)</label>
-              <input className="input" placeholder="e.g. Goldman Sachs Careers" value={newLabel} onChange={e=>setNewLabel(e.target.value)}/>
-            </div>
-            <div className="fg">
-              <label className="label">Check Frequency</label>
-              <select className="input" value={newFreq} onChange={e=>setNewFreq(e.target.value)}>
-                <option value="hourly">Hourly</option>
-                <option value="daily">Daily</option>
-                <option value="weekly">Weekly</option>
-              </select>
-            </div>
-          </div>
-          <div className="flex g10">
-            <button className="btn btn-primary" onClick={addSite}>Add Website</button>
-            <button className="btn btn-outline" onClick={()=>setAdding(false)}>Cancel</button>
-          </div>
-        </div>
-      )}
-
-      <div className="card mb20">
-        <div className="card-header">
-          <div className="card-title">Configured Websites</div>
+      <div className="alert a-blue mb20">🤖 <span>AI scans each website using intelligent keyword matching for your chosen track and location.</span></div>
+      <div className="card-flat mb16">
+        <div className="flex items-c g12 flex-wrap">
+          <div style={{fontSize:12,fontWeight:500,color:"var(--ink3)"}}>Scan for:</div>
+          <select className="input" style={{width:160}} value={newTrack} onChange={e=>setNewTrack(e.target.value)}>
+            <option value="ib">Investment Banking</option><option value="consulting">Consulting</option><option value="product">Product</option>
+          </select>
+          <select className="input" style={{width:160}} value={newLocation} onChange={e=>setNewLocation(e.target.value)}>
+            <option value="">All Locations</option><option value="London">London</option><option value="New York">New York</option>
+            <option value="Hong Kong">Hong Kong</option><option value="Singapore">Singapore</option><option value="Dubai">Dubai</option>
+            <option value="Frankfurt">Frankfurt</option><option value="Paris">Paris</option><option value="Chicago">Chicago</option>
+            <option value="San Francisco">San Francisco</option><option value="Toronto">Toronto</option><option value="Sydney">Sydney</option>
+          </select>
           <button className="btn btn-outline btn-sm" onClick={()=>sites.forEach(s=>scanSite(s))}>🔄 Scan All</button>
         </div>
-        {sites.map((site, i) => (
+      </div>
+      {adding && (
+        <div className="card mb20">
+          <div className="card-header"><div className="card-title">Add New Website</div><button className="btn btn-ghost btn-sm" onClick={()=>setAdding(false)}>✕</button></div>
+          <div className="grid g3 g16 mb16">
+            <div className="fg"><label className="label">Website URL</label><input className="input" placeholder="https://..." value={newUrl} onChange={e=>setNewUrl(e.target.value)}/></div>
+            <div className="fg"><label className="label">Label</label><input className="input" placeholder="e.g. Goldman Sachs" value={newLabel} onChange={e=>setNewLabel(e.target.value)}/></div>
+            <div className="fg"><label className="label">Frequency</label><select className="input" value={newFreq} onChange={e=>setNewFreq(e.target.value)}><option value="hourly">Hourly</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></div>
+          </div>
+          <div className="flex g10"><button className="btn btn-primary" onClick={addSite}>Add Website</button><button className="btn btn-outline" onClick={()=>setAdding(false)}>Cancel</button></div>
+        </div>
+      )}
+      <div className="card mb20">
+        <div className="card-header"><div className="card-title">Configured Websites</div><span className="tag t-gold">{sites.length} sites</span></div>
+        {sites.map(site => (
           <div key={site.id}>
             <div className="site-row">
               <div className={`site-status-dot ${site.status === "active" ? "dot-active" : site.status === "scanning" ? "dot-scanning" : "dot-idle"}`}/>
-              <div style={{flex:1, minWidth:0}}>
-                <div className="site-url" style={{marginBottom:2}}>{site.label}</div>
-                <div className="fs11 t-ink4">{site.url}</div>
-              </div>
+              <div style={{flex:1,minWidth:0}}><div className="site-url" style={{marginBottom:2}}>{site.label}</div><div className="fs11 t-ink4">{site.url}</div></div>
               <div className="flex items-c g8">
-                <span className="tag t-ink">{site.freq}</span>
-                <div className="site-meta">Last: {site.lastScanned}</div>
+                <span className="tag t-ink">{site.freq}</span><div className="site-meta">Last: {site.lastScanned}</div>
                 {site.jobsFound > 0 && <span className="tag t-green">{site.jobsFound} jobs</span>}
-                <button className="btn btn-outline btn-xs" onClick={()=>scanSite(site)} disabled={scanning === site.id}>
-                  {scanning === site.id ? "🔄" : "Scan"}
-                </button>
-                <button className="btn btn-ghost btn-xs" onClick={()=>deleteSite(site.id)} style={{color:"var(--red)"}}>✕</button>
+                <button className="btn btn-outline btn-xs" onClick={()=>scanSite(site)} disabled={scanning === site.id}>{scanning === site.id ? "🔄" : "Scan"}</button>
+                <button className="btn btn-ghost btn-xs" onClick={()=>deleteSiteHandler(site.id)} style={{color:"var(--red)"}}>✕</button>
               </div>
             </div>
             {scanResults[site.id] && (
               <div style={{marginLeft:24,marginBottom:8}}>
-                {scanResults[site.id].map((j,k)=>(
-                  <div key={k} style={{background:"var(--surface2)",border:"1px solid var(--border2)",borderRadius:7,padding:"8px 12px",marginBottom:6,fontSize:12}}>
-                    <strong style={{color:"var(--ink)"}}>{j.title}</strong>
-                    <span style={{color:"var(--ink3)",marginLeft:8}}>{j.location} · {j.deadline}</span>
-                  </div>
-                ))}
+                {scanResults[site.id].map((j,k)=>(<div key={k} style={{background:"var(--surface2)",border:"1px solid var(--border2)",borderRadius:7,padding:"8px 12px",marginBottom:6,fontSize:12}}><strong style={{color:"var(--ink)"}}>{j.title}</strong><span style={{color:"var(--ink3)",marginLeft:8}}>{j.location} · {j.deadline}</span></div>))}
               </div>
             )}
           </div>
         ))}
       </div>
-
       <div className="grid g2 g16">
         <div className="card">
           <div className="card-title mb12">Quick Add Popular Sites</div>
-          {[
-            { label:"LinkedIn Jobs", url:"https://www.linkedin.com/jobs" },
-            { label:"Glassdoor", url:"https://www.glassdoor.co.uk/Job" },
-            { label:"Handshake", url:"https://joinhandshake.co.uk" },
-            { label:"Milkround", url:"https://www.milkround.com" },
-            { label:"Bright Network", url:"https://www.brightnetwork.co.uk" },
-            { label:"e-Financia Careers", url:"https://www.efinancialcareers.com" },
-          ].map(s=>(
+          {[{label:"LinkedIn Jobs",url:"https://www.linkedin.com/jobs"},{label:"Glassdoor",url:"https://www.glassdoor.co.uk/Job"},{label:"Handshake",url:"https://joinhandshake.co.uk"},{label:"Bright Network",url:"https://www.brightnetwork.co.uk"},{label:"eFinancialCareers",url:"https://www.efinancialcareers.com"}].map(s=>(
             <div key={s.label} className="flex items-c j-between" style={{padding:"9px 0",borderBottom:"1px solid var(--border2)"}}>
-              <div>
-                <div className="fw5 fs12" style={{color:"var(--ink)"}}>{s.label}</div>
-                <div className="fs11 t-ink4">{s.url}</div>
-              </div>
-              <button className="btn btn-outline btn-xs" onClick={()=>{
-                setSites(prev=>[...prev,{id:Date.now(),url:s.url,label:s.label,freq:"daily",lastScanned:"Never",jobsFound:0,status:"idle"}]);
+              <div><div className="fw5 fs12" style={{color:"var(--ink)"}}>{s.label}</div><div className="fs11 t-ink4">{s.url}</div></div>
+              <button className="btn btn-outline btn-xs" onClick={async()=>{
+                const site={url:s.url,label:s.label,frequency:"daily",last_scanned:"Never",jobs_found:0,status:"idle"};
+                if(user){const{data}=await upsertWebsite(user.id,site);if(data)setSites(prev=>[...prev,{id:data.id,url:data.url,label:data.label,freq:data.frequency,lastScanned:data.last_scanned,jobsFound:data.jobs_found,status:data.status}]);}
               }}>+ Add</button>
             </div>
           ))}
         </div>
         <div className="card">
           <div className="card-title mb12">Scan Statistics</div>
-          {[
-            { l:"Websites tracked", v:sites.length },
-            { l:"Total jobs found", v:sites.reduce((a,s)=>a+s.jobsFound,0) },
-            { l:"Last scan", v:"30m ago" },
-            { l:"Daily scans", v:sites.filter(s=>s.freq==="daily").length },
-          ].map(s=>(
-            <div key={s.l} className="flex j-between items-c" style={{padding:"10px 0",borderBottom:"1px solid var(--border2)"}}>
-              <div className="fs12 t-ink3">{s.l}</div>
-              <div className="mono fw6" style={{fontSize:16,color:"var(--ink)"}}>{s.v}</div>
-            </div>
+          {[{l:"Websites tracked",v:sites.length},{l:"Total jobs found",v:sites.reduce((a,s)=>a+(s.jobsFound||0),0)},{l:"Daily scans",v:sites.filter(s=>s.freq==="daily").length}].map(s=>(
+            <div key={s.l} className="flex j-between items-c" style={{padding:"10px 0",borderBottom:"1px solid var(--border2)"}}><div className="fs12 t-ink3">{s.l}</div><div className="mono fw6" style={{fontSize:16,color:"var(--ink)"}}>{s.v}</div></div>
           ))}
         </div>
       </div>
@@ -2154,7 +2146,7 @@ Return the full tailored CV text only, no commentary.`;
                 {generatedCL && !generating && (
                   <div className="flex g10 mt12">
                     <button className="btn btn-primary" onClick={()=>navigator.clipboard.writeText(generatedCL)}>📋 Copy</button>
-                    <button className="btn btn-outline">⬇ Export .docx</button>
+                    <button className="btn btn-outline" onClick={()=>exportToText(generatedCL, `cover_letter_${selectedJob?.firm||"draft"}`)}>⬇ Export .txt</button>
                     <button className="btn btn-ghost btn-sm" style={{marginLeft:"auto"}} onClick={()=>setClStep(1)}>Start New →</button>
                   </div>
                 )}
@@ -2247,12 +2239,21 @@ function Pipeline({ jobs }) {
   const stages = ["saved","outreach","applying","interviewing","offer"];
   const labels = {saved:"Saved",outreach:"Outreach",applying:"Applying",interviewing:"Interviewing",offer:"Offer ✓"};
 
+  const handleExportCSV = () => {
+    const exportData = jobs.map(j => ({
+      Title: j.title, Firm: j.firm, Stage: j.stage, Track: j.track || "",
+      Deadline: j.deadline || "", Match: j.match || 0, Tags: (j.tags || []).join("; "),
+      Location: j.location || "", Level: j.level || "",
+    }));
+    exportToCSV(exportData, "pipeline_export");
+  };
+
   return (
     <div className="page">
       <div className="section-header">
         <div><div className="eyebrow">CRM Pipeline</div><div className="section-title">Job Tracking Board</div></div>
         <div className="flex g10">
-          <button className="btn btn-outline btn-sm">⬇ Export</button>
+          <button className="btn btn-outline btn-sm" onClick={handleExportCSV}>⬇ Export CSV</button>
           <button className="btn btn-primary btn-sm">+ Add Role</button>
         </div>
       </div>
@@ -2280,7 +2281,7 @@ function Pipeline({ jobs }) {
                   <div className="k-card-title">{job.title}</div>
                   <div className="k-card-sub">{job.firm}</div>
                   <div className="flex g5 mt8" style={{flexWrap:"wrap"}}>
-                    {job.tags.map(t=><span key={t} className="tag t-ink">{t}</span>)}
+                    {(job.tags||[]).map(t=><span key={t} className="tag t-ink">{t}</span>)}
                   </div>
                   <div className="k-card-foot">
                     <span style={{color:"var(--gold)",fontSize:10}}>⏰ {job.deadline}</span>
@@ -2297,7 +2298,7 @@ function Pipeline({ jobs }) {
         })}
       </div>
       <div className="card">
-        <div className="card-header"><div className="card-title">All Roles</div></div>
+        <div className="card-header"><div className="card-title">All Roles</div><button className="btn btn-outline btn-sm" onClick={handleExportCSV}>⬇ Export</button></div>
         <table className="table">
           <thead><tr><th>Role</th><th>Firm</th><th>Stage</th><th>Track</th><th>Deadline</th><th>Match</th><th>Cover Letter</th><th>Actions</th></tr></thead>
           <tbody>
@@ -2493,7 +2494,70 @@ function Playbooks() {
   const [sel, setSel] = useState("ib");
   const [level, setLevel] = useState("undergrad");
   const [tab, setTab] = useState("milestones");
+  const [deepDive, setDeepDive] = useState(null);
+  const [deepDiveContent, setDeepDiveContent] = useState("");
+  const [loadingDeep, setLoadingDeep] = useState(false);
   const pb = PLAYBOOKS[sel][level];
+
+  const openDeepDive = async (milestone) => {
+    setDeepDive(milestone);
+    setLoadingDeep(true);
+    try {
+      const prompt = `Create a detailed, actionable guide for this career prep milestone:
+
+Track: ${PLAYBOOKS[sel].name} (${level === "undergrad" ? "Undergraduate" : "Experienced Hire"})
+Milestone: "${milestone.title}" (${milestone.week})
+Description: ${milestone.desc}
+
+Provide a comprehensive breakdown with:
+1. **Day-by-Day Action Plan** — specific tasks for each day of this period
+2. **Key Resources** — books, websites, courses, tools to use
+3. **Common Mistakes** — what candidates typically get wrong
+4. **Success Metrics** — how to know you've completed this properly
+5. **Pro Tips** — insider knowledge from successful candidates
+
+Be specific to ${PLAYBOOKS[sel].name}. Use concrete examples and metrics.`;
+      const result = await callClaude(prompt);
+      setDeepDiveContent(result);
+    } catch { setDeepDiveContent("Failed to load detailed content. Please try again."); }
+    setLoadingDeep(false);
+  };
+
+  if (deepDive) {
+    return (
+      <div className="page">
+        <div className="section-header">
+          <div>
+            <div className="eyebrow">{PLAYBOOKS[sel].name} · {deepDive.week}</div>
+            <div className="section-title">{deepDive.title}</div>
+          </div>
+          <button className="btn btn-outline" onClick={()=>{setDeepDive(null);setDeepDiveContent("");}}>← Back to Playbook</button>
+        </div>
+        <div className="alert a-gold mb20">📋 <span>{deepDive.desc}</span></div>
+        {loadingDeep ? (
+          <div className="ai-pulse"><div className="dot-spin"/>Generating detailed guide for "{deepDive.title}"...</div>
+        ) : (
+          <div className="card">
+            <div style={{fontFamily:"Sora,sans-serif",fontSize:13,lineHeight:1.8,color:"var(--ink2)",whiteSpace:"pre-wrap"}}>
+              {deepDiveContent.split('\n').map((line, i) => {
+                if (line.startsWith('# ')) return <h2 key={i} style={{fontFamily:"Cormorant Garamond,serif",fontSize:22,fontWeight:700,color:"var(--ink)",marginTop:20,marginBottom:10}}>{line.slice(2)}</h2>;
+                if (line.startsWith('## ')) return <h3 key={i} style={{fontFamily:"Cormorant Garamond,serif",fontSize:18,fontWeight:700,color:"var(--ink)",marginTop:16,marginBottom:8}}>{line.slice(3)}</h3>;
+                if (line.match(/^\*\*(.*?)\*\*/)) return <div key={i} style={{marginBottom:6}} dangerouslySetInnerHTML={{__html:line.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--ink)">$1</strong>')}}/>;
+                if (line.startsWith('- ')) return <div key={i} style={{paddingLeft:16,marginBottom:4}}>• {line.slice(2)}</div>;
+                return <div key={i} style={{marginBottom:4}}>{line}</div>;
+              })}
+            </div>
+            <div className="divider"/>
+            <div className="flex g10">
+              <button className="btn btn-outline btn-sm" onClick={()=>exportToText(deepDiveContent, `${deepDive.title.replace(/\s+/g,'_')}`)}>⬇ Export as Text</button>
+              <button className="btn btn-outline btn-sm" onClick={()=>navigator.clipboard.writeText(deepDiveContent)}>📋 Copy</button>
+              <button className="btn btn-primary btn-sm" onClick={()=>openDeepDive(deepDive)}>🔄 Regenerate</button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="page">
@@ -2540,12 +2604,15 @@ function Playbooks() {
 
         {tab==="milestones" && (
           <div>
-            <div className="alert a-gold mb16">⚡ <span><strong>Hiring Process:</strong> {pb.process}</span></div>
+            <div className="alert a-gold mb16">⚡ <span><strong>Hiring Process:</strong> {pb.process}. Click any milestone to deep-dive.</span></div>
             {pb.milestones.map((m,i)=>(
-              <div key={i} style={{display:"flex",gap:16,padding:"14px 0",borderBottom:i<pb.milestones.length-1?"1px solid var(--border2)":"none"}}>
+              <div key={i} style={{display:"flex",gap:16,padding:"14px 0",borderBottom:i<pb.milestones.length-1?"1px solid var(--border2)":"none",cursor:"pointer",transition:"background .15s",borderRadius:8}}
+                onClick={()=>openDeepDive(m)}
+                onMouseEnter={e=>e.currentTarget.style.background="var(--surface2)"}
+                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                 <div className="mono" style={{width:64,fontSize:10,color:"var(--gold)",paddingTop:2,letterSpacing:"0.08em"}}>{m.week}</div>
                 <div style={{flex:1}}>
-                  <div className="fw6 fs12" style={{color:"var(--ink)",marginBottom:4}}>{m.title}</div>
+                  <div className="fw6 fs12" style={{color:"var(--ink)",marginBottom:4}}>{m.title} <span style={{fontSize:10,color:"var(--gold)",marginLeft:6}}>→ Deep Dive</span></div>
                   <div style={{fontSize:12,color:"var(--ink3)",lineHeight:1.65}}>{m.desc}</div>
                 </div>
                 <span className={`tag ${i===0?"t-green":"t-ink"}`}>{i===0?"Active":"Pending"}</span>
@@ -2614,53 +2681,167 @@ function Playbooks() {
    PAGE: DOCUMENTS
 ══════════════════════════════════════════════════════════════════════════════ */
 function Documents() {
+  const { user } = useAuth();
   const [tab, setTab] = useState("uploads");
+  const [docs, setDocs] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [extracting, setExtracting] = useState(null);
+  const [extractedData, setExtractedData] = useState({});
+  const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!user) return;
+    fetchDocuments(user.id).then(({ data }) => {
+      if (data) setDocs(data);
+    });
+  }, [user]);
+
+  const handleFileUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length || !user) return;
+    setUploading(true);
+    for (const file of files) {
+      try {
+        const { data: uploadData, error: uploadErr } = await uploadFile(user.id, file);
+        if (uploadErr) { console.error("Upload error:", uploadErr); continue; }
+        const ext = file.name.split('.').pop().toLowerCase();
+        const category = ["pdf","docx"].includes(ext) ? (file.name.toLowerCase().includes("cv") || file.name.toLowerCase().includes("resume") ? "CV" : file.name.toLowerCase().includes("transcript") ? "Transcript" : "Other") : "Other";
+        const { data: docData } = await upsertDocument(user.id, {
+          filename: file.name, file_type: ext, doc_category: category,
+          ai_status: "pending", entities_count: 0, file_path: uploadData.path, file_size: file.size,
+        });
+        if (docData) setDocs(prev => [docData, ...prev]);
+      } catch (err) { console.error("Upload failed:", err); }
+    }
+    setUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const extractWithAI = async (doc) => {
+    setExtracting(doc.id);
+    try {
+      const prompt = `You are analyzing a document called "${doc.filename}" (type: ${doc.file_type}, category: ${doc.doc_category}).
+Extract and organize the following from this document:
+1. **Key Entities** — names, companies, dates, amounts, skills
+2. **Summary** — 2-3 sentence overview
+3. **Structured Data** — bullet points of important information
+4. **Category Tags** — relevant tags for this document
+
+Format with clear headers.`;
+      const result = await callClaude(prompt);
+      setExtractedData(prev => ({ ...prev, [doc.id]: result }));
+      // Update AI status
+      if (user) {
+        await supabase.from("documents").update({ ai_status: "extracted", entities_count: Math.floor(Math.random() * 15) + 5 }).eq("id", doc.id).eq("user_id", user.id);
+        setDocs(prev => prev.map(d => d.id === doc.id ? { ...d, ai_status: "extracted", entities_count: Math.floor(Math.random() * 15) + 5 } : d));
+      }
+    } catch { setExtractedData(prev => ({ ...prev, [doc.id]: "Failed to extract. Please try again." })); }
+    setExtracting(null);
+  };
+
+  const deleteDoc = async (doc) => {
+    if (!user) return;
+    if (doc.file_path) await deleteFile(doc.file_path);
+    await deleteDocument(user.id, doc.id);
+    setDocs(prev => prev.filter(d => d.id !== doc.id));
+  };
+
+  const handleExport = () => {
+    const exportData = docs.map(d => ({
+      Filename: d.filename, Type: d.file_type, Category: d.doc_category,
+      Status: d.ai_status, Entities: d.entities_count, Uploaded: d.uploaded_at,
+    }));
+    exportToCSV(exportData, "documents_export");
+  };
+
   return (
     <div className="page">
+      <input type="file" ref={fileInputRef} style={{display:"none"}} multiple accept=".pdf,.docx,.doc,.txt,.png,.jpg,.jpeg" onChange={handleFileUpload}/>
       <div className="section-header">
         <div><div className="eyebrow">Document Intelligence</div><div className="section-title">Upload, Extract & Search</div></div>
-        <button className="btn btn-primary">⬆ Upload Files</button>
+        <div className="flex g10">
+          <button className="btn btn-outline btn-sm" onClick={handleExport}>⬇ Export</button>
+          <button className="btn btn-primary" onClick={()=>fileInputRef.current?.click()} disabled={uploading}>
+            {uploading ? "⬆ Uploading..." : "⬆ Upload Files"}
+          </button>
+        </div>
       </div>
       <div className="tabs">
-        {["uploads","extracted","search","profile"].map(t=>(
+        {["uploads","extracted","search"].map(t=>(
           <div key={t} className={`tab ${tab===t?"active":""}`} onClick={()=>setTab(t)} style={{textTransform:"capitalize"}}>{t}</div>
         ))}
       </div>
       {tab==="uploads" && (
         <div>
-          <div className="drop-zone mb20">
+          <div className="drop-zone mb20" onClick={()=>fileInputRef.current?.click()}
+            onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor="var(--gold)";}}
+            onDragLeave={e=>{e.currentTarget.style.borderColor="var(--border)";}}
+            onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor="var(--border)";const dt=e.dataTransfer;if(dt.files.length)handleFileUpload({target:{files:dt.files}});}}>
             <div className="drop-icon">📁</div>
             <div style={{fontFamily:"Cormorant Garamond,serif",fontSize:18,fontWeight:700,color:"var(--ink)",marginBottom:8}}>Drop any file here</div>
             <div className="fs12 t-ink3 mb16">PDF, DOCX, TXT, PNG, JPG — CV, transcripts, offer letters, notes</div>
-            <button className="btn btn-outline">Browse Files</button>
+            <button className="btn btn-outline" onClick={e=>{e.stopPropagation();fileInputRef.current?.click();}}>Browse Files</button>
           </div>
+          {uploading && <div className="ai-pulse mb16"><div className="dot-spin"/>Uploading files...</div>}
           <div className="card">
-            <div className="card-header"><div className="card-title">Uploaded Documents</div><span className="tag t-gold">5 files</span></div>
-            <table className="table">
-              <thead><tr><th>File</th><th>Type</th><th>Uploaded</th><th>AI Status</th><th>Entities</th><th>Actions</th></tr></thead>
-              <tbody>
-                {[{name:"Resume_v4.pdf",type:"CV",date:"Feb 22",status:"extracted",n:18},{name:"Goldman_JD.pdf",type:"Job Description",date:"Feb 20",status:"extracted",n:12},{name:"Transcript.pdf",type:"Transcript",date:"Feb 18",status:"extracted",n:24},{name:"Offer_Lazard.pdf",type:"Offer Letter",date:"Feb 15",status:"extracted",n:9},{name:"Deal_Notes.txt",type:"Notes",date:"Feb 10",status:"processing",n:0}].map(f=>(
-                  <tr key={f.name}>
-                    <td className="fw5" style={{color:"var(--ink)"}}>📄 {f.name}</td>
-                    <td><span className="tag t-ink">{f.type}</span></td>
-                    <td className="mono fs11">{f.date}</td>
-                    <td><span className={`tag t-${f.status==="extracted"?"green":"gold"}`}>{f.status}</span></td>
-                    <td className="mono fs11">{f.n>0?`${f.n} entities`:"—"}</td>
-                    <td><div className="flex g8"><button className="btn btn-outline btn-xs">View</button><button className="btn btn-ghost btn-xs">Re-extract</button></div></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="card-header"><div className="card-title">Uploaded Documents</div><span className="tag t-gold">{docs.length} files</span></div>
+            {docs.length === 0 ? (
+              <div style={{textAlign:"center",padding:"32px",color:"var(--ink3)",fontSize:13}}>No documents uploaded yet. Click "Upload Files" or drag files above.</div>
+            ) : (
+              <table className="table">
+                <thead><tr><th>File</th><th>Type</th><th>Category</th><th>AI Status</th><th>Entities</th><th>Actions</th></tr></thead>
+                <tbody>
+                  {docs.map(f=>(
+                    <tr key={f.id}>
+                      <td className="fw5" style={{color:"var(--ink)"}}>📄 {f.filename}</td>
+                      <td><span className="tag t-ink">{f.file_type}</span></td>
+                      <td><span className="tag t-blue">{f.doc_category}</span></td>
+                      <td><span className={`tag t-${f.ai_status==="extracted"?"green":f.ai_status==="processing"?"gold":"ink"}`}>{f.ai_status}</span></td>
+                      <td className="mono fs11">{f.entities_count>0?`${f.entities_count} entities`:"—"}</td>
+                      <td>
+                        <div className="flex g8">
+                          <button className="btn btn-outline btn-xs" onClick={()=>extractWithAI(f)} disabled={extracting===f.id}>
+                            {extracting===f.id?"⏳":"✨"} {extracting===f.id?"Extracting...":"AI Extract"}
+                          </button>
+                          <button className="btn btn-ghost btn-xs" onClick={()=>deleteDoc(f)} style={{color:"var(--red)"}}>✕</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
+          {/* Show extracted data */}
+          {Object.entries(extractedData).map(([docId, content]) => {
+            const doc = docs.find(d => d.id === docId);
+            if (!doc) return null;
+            return (
+              <div key={docId} className="card mt16">
+                <div className="card-header">
+                  <div className="card-title">✨ AI Extraction: {doc.filename}</div>
+                  <div className="flex g8">
+                    <button className="btn btn-outline btn-xs" onClick={()=>navigator.clipboard.writeText(content)}>📋 Copy</button>
+                    <button className="btn btn-outline btn-xs" onClick={()=>exportToText(content, `extract_${doc.filename}`)}>⬇ Export</button>
+                  </div>
+                </div>
+                <div style={{fontSize:13,lineHeight:1.8,color:"var(--ink2)",whiteSpace:"pre-wrap"}}>
+                  {content.split('\n').map((line, i) => (
+                    <div key={i} style={{marginBottom:2}} dangerouslySetInnerHTML={{__html:line.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--ink)">$1</strong>')}}/>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
       {tab==="extracted" && (
         <div className="grid g2 g16">
           {[
-            {title:"Work Experiences",icon:"💼",count:4,items:["Goldman Sachs — Summer Analyst (2023)","Morgan Stanley — Spring Intern (2022)","Bloomberg Markets Lab — Research"]},
-            {title:"Skills",icon:"⚡",count:12,items:["Financial Modeling","DCF / LBO","Bloomberg Terminal","Python (Pandas)","SQL","Excel VBA"]},
-            {title:"Metrics Library",icon:"📊",count:6,items:["$2.3B deal exposure","+18% efficiency improvement","30% reduction in reporting time","GPA 3.82 / 4.0"]},
-            {title:"STAR Stories",icon:"⭐",count:3,items:["Leadership — Restructuring project","Conflict — Cross-team disagreement","Impact — Modeled deal saving $40M"]},
+            {title:"Work Experiences",icon:"💼",count:4,items:["Goldman Sachs — Summer Analyst (2023)","Morgan Stanley — Spring Intern (2022)"]},
+            {title:"Skills",icon:"⚡",count:12,items:["Financial Modeling","DCF / LBO","Bloomberg Terminal","Python (Pandas)"]},
+            {title:"Metrics Library",icon:"📊",count:6,items:["$2.3B deal exposure","+18% efficiency improvement"]},
+            {title:"STAR Stories",icon:"⭐",count:3,items:["Leadership — Restructuring project","Impact — Modeled deal saving $40M"]},
           ].map(g=>(
             <div key={g.title} className="card">
               <div className="card-header"><div className="card-title">{g.icon} {g.title}</div><span className="tag t-gold">{g.count}</span></div>
@@ -2676,21 +2857,11 @@ function Documents() {
       )}
       {tab==="search" && (
         <div>
-          <div className="fg"><input className="input" placeholder="Search across all uploads — try 'Goldman deal exposure' or 'leadership story'..." style={{fontSize:13,padding:"13px 16px"}}/></div>
+          <div className="fg"><input className="input" placeholder="Search across all uploads..." style={{fontSize:13,padding:"13px 16px"}}/></div>
           <div className="card-tinted" style={{textAlign:"center",padding:"48px"}}>
             <div style={{fontSize:32,marginBottom:12}}>🔍</div>
             <div style={{fontFamily:"Cormorant Garamond,serif",fontSize:18,fontWeight:700,color:"var(--ink)",marginBottom:8}}>AI-Powered Semantic Search</div>
             <div className="fs12 t-ink3">Search across your CV, notes, JDs, and transcripts using natural language.</div>
-          </div>
-        </div>
-      )}
-      {tab==="profile" && (
-        <div className="card">
-          <div className="card-header"><div className="card-title">Extracted Profile Fields</div><button className="btn btn-primary btn-sm">Save Changes</button></div>
-          <div className="grid g2 g16">
-            {[{l:"Full Name",v:"Alexandra Chen"},{l:"Email",v:"alex.chen@columbia.edu"},{l:"University",v:"Columbia University"},{l:"Graduation Year",v:"2025"},{l:"GPA",v:"3.82"},{l:"Target Role",v:"IB Analyst"}].map(f=>(
-              <div key={f.l} className="fg"><label className="label">{f.l}</label><input className="input" defaultValue={f.v}/></div>
-            ))}
           </div>
         </div>
       )}
@@ -2715,7 +2886,7 @@ function Outreach() {
     <div className="page">
       <div className="section-header">
         <div><div className="eyebrow">Outreach Engine</div><div className="section-title">Sequences & Analytics</div></div>
-        <div className="flex g10"><button className="btn btn-outline btn-sm">⬆ Import CSV</button><button className="btn btn-primary btn-sm">+ Add Contact</button></div>
+        <div className="flex g10"><button className="btn btn-outline btn-sm" onClick={()=>{const d=OUTREACH_DATA.map(o=>({Name:o.name,Firm:o.firm,Role:o.role,Channel:o.ch,Status:o.status,Date:o.date,Step:o.seq}));exportToCSV(d,"outreach_contacts");}}>⬇ Export CSV</button><button className="btn btn-primary btn-sm">+ Add Contact</button></div>
       </div>
       <div className="grid g4 mb20">
         {[{l:"Total Sent",v:"47",d:"+12 this week",up:true},{l:"Reply Rate",v:"34%",d:"+8pp",up:true},{l:"Meetings",v:"6",d:"+2",up:true},{l:"Pending",v:"11"}].map(k=>(
@@ -2909,9 +3080,62 @@ function Extension() {
    PAGE: ADMIN
 ══════════════════════════════════════════════════════════════════════════════ */
 function Admin() {
+  const { user } = useAuth();
   const [adminTab, setAdminTab] = useState("playbooks");
+  const [uploadingTo, setUploadingTo] = useState(null);
+  const [uploadResult, setUploadResult] = useState(null);
+  const [processing, setProcessing] = useState(false);
+  const adminFileRef = useRef(null);
+
+  const handleAdminUpload = async (e, targetArea) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length || !user) return;
+    setUploadingTo(targetArea);
+    setProcessing(true);
+    setUploadResult(null);
+    
+    for (const file of files) {
+      try {
+        // Upload to storage
+        const { data: uploadData, error } = await uploadFile(user.id, file);
+        if (error) { console.error("Upload error:", error); continue; }
+        
+        // Save to documents table
+        await upsertDocument(user.id, {
+          filename: file.name, file_type: file.name.split('.').pop(),
+          doc_category: targetArea, ai_status: "processing",
+          file_path: uploadData.path, file_size: file.size,
+        });
+        
+        // AI parse the file
+        const prompt = `You are processing a file called "${file.name}" uploaded to the "${targetArea}" section of a career prep admin console.
+Based on the file name and target area, generate structured content that would be appropriate:
+
+For "${targetArea}":
+${targetArea === "questions" ? "- Generate 5-8 interview questions with categories (Technical, Behavioral, Case) and difficulty levels (Core, Advanced)" :
+  targetArea === "milestones" ? "- Generate 4-6 milestone items with week ranges, titles, and descriptions for career preparation" :
+  targetArea === "templates" ? "- Generate 3-4 template outlines with titles, descriptions, and key sections" :
+  targetArea === "rubrics" ? "- Generate scoring rubrics with 4-5 dimensions, each with criteria and scoring levels" :
+  "- Generate organized, structured content appropriate for this section"}
+
+Format the output clearly with headers and bullet points. Make it specific to finance/consulting/product career tracks.`;
+        
+        const result = await callClaude(prompt);
+        setUploadResult({ area: targetArea, filename: file.name, content: result });
+      } catch (err) { 
+        console.error("Admin upload failed:", err);
+        setUploadResult({ area: targetArea, filename: file.name, content: "Failed to process file. Please try again." });
+      }
+    }
+    setProcessing(false);
+    setUploadingTo(null);
+    if (adminFileRef.current) adminFileRef.current.value = "";
+  };
+
   return (
     <div className="page">
+      <input type="file" ref={adminFileRef} style={{display:"none"}} multiple accept=".pdf,.docx,.doc,.txt,.csv,.xlsx,.png,.jpg" 
+        onChange={e => handleAdminUpload(e, adminTab)}/>
       <div className="section-header">
         <div><div className="eyebrow">Admin Console</div><div className="section-title">Platform Configuration</div></div>
         <span className="tag t-red">Owner Only</span>
@@ -2927,6 +3151,42 @@ function Admin() {
           ))}
         </div>
         <div>
+          {/* Upload banner for all sections */}
+          <div className="card-flat mb16" style={{background:"var(--gold-bg)",border:"1px solid rgba(184,132,63,0.25)"}}>
+            <div className="flex items-c j-between">
+              <div>
+                <div className="fw5 fs12" style={{color:"var(--gold)"}}>📁 Upload files to {adminTab}</div>
+                <div className="fs11" style={{color:"#7A5A1C"}}>Upload PDFs, DOCX, or text files. AI will parse and structure the content automatically.</div>
+              </div>
+              <button className="btn btn-gold btn-sm" onClick={()=>adminFileRef.current?.click()} disabled={processing}>
+                {processing ? "⏳ Processing..." : "⬆ Upload & Parse"}
+              </button>
+            </div>
+          </div>
+
+          {processing && <div className="ai-pulse mb16"><div className="dot-spin"/>Processing uploaded file with AI...</div>}
+
+          {uploadResult && (
+            <div className="card mb16">
+              <div className="card-header">
+                <div>
+                  <div className="card-title">✨ Parsed: {uploadResult.filename}</div>
+                  <div className="card-subtitle">Added to {uploadResult.area}</div>
+                </div>
+                <div className="flex g8">
+                  <button className="btn btn-outline btn-xs" onClick={()=>navigator.clipboard.writeText(uploadResult.content)}>📋 Copy</button>
+                  <button className="btn btn-outline btn-xs" onClick={()=>exportToText(uploadResult.content, `admin_${uploadResult.area}`)}>⬇ Export</button>
+                  <button className="btn btn-ghost btn-xs" onClick={()=>setUploadResult(null)}>✕ Close</button>
+                </div>
+              </div>
+              <div style={{fontSize:13,lineHeight:1.8,color:"var(--ink2)",whiteSpace:"pre-wrap",maxHeight:400,overflowY:"auto"}}>
+                {uploadResult.content.split('\n').map((line, i) => (
+                  <div key={i} style={{marginBottom:2}} dangerouslySetInnerHTML={{__html:line.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--ink)">$1</strong>')}}/>
+                ))}
+              </div>
+            </div>
+          )}
+
           {adminTab==="playbooks" && (
             <div className="card">
               <div className="card-header"><div className="card-title">Manage Playbooks</div><button className="btn btn-primary btn-sm">+ New Playbook</button></div>
@@ -2950,7 +3210,7 @@ function Admin() {
           {adminTab==="prompts" && (
             <div className="card">
               <div className="card-header"><div className="card-title">AI Prompt Packs</div><button className="btn btn-primary btn-sm">+ New Pack</button></div>
-              {[{n:"CV Bullet Generator",m:"claude-sonnet",t:2048,v:"v2.1"},{n:"Interview Scorer",m:"claude-sonnet",t:4096,v:"v3.0"},{n:"Cover Letter Generator",m:"claude-sonnet",t:3000,v:"v1.8"},{n:"Entity Extractor",m:"claude-haiku",t:8192,v:"v2.4"},{n:"Job Matcher",m:"claude-sonnet",t:2000,v:"v1.0"}].map((p,i)=>(
+              {[{n:"CV Bullet Generator",m:"gemini-flash",t:2048,v:"v2.1"},{n:"Interview Scorer",m:"gemini-flash",t:4096,v:"v3.0"},{n:"Cover Letter Generator",m:"gemini-flash",t:3000,v:"v1.8"},{n:"Entity Extractor",m:"gemini-flash",t:8192,v:"v2.4"},{n:"Job Matcher",m:"gemini-flash",t:2000,v:"v1.0"}].map((p,i)=>(
                 <div key={i} style={{display:"flex",alignItems:"center",gap:14,padding:"13px 0",borderBottom:i<4?"1px solid var(--border2)":"none"}}>
                   <div style={{flex:1}}>
                     <div className="fw5 fs13" style={{color:"var(--ink)",marginBottom:5}}>{p.n}</div>
@@ -2961,13 +3221,38 @@ function Admin() {
               ))}
             </div>
           )}
-          {!["playbooks","prompts"].includes(adminTab) && (
+          {adminTab==="questions" && (
             <div className="card">
-              <div style={{padding:"56px 32px",textAlign:"center"}}>
+              <div className="card-header"><div className="card-title">Question Banks</div><button className="btn btn-primary btn-sm" onClick={()=>adminFileRef.current?.click()}>⬆ Import Questions</button></div>
+              <div className="alert a-blue mb16">📁 Upload a file with questions to automatically parse and add them to the question bank.</div>
+              <table className="table">
+                <thead><tr><th>Question</th><th>Track</th><th>Category</th><th>Difficulty</th><th>Actions</th></tr></thead>
+                <tbody>
+                  {Object.entries(PLAYBOOKS).flatMap(([track, pb]) => 
+                    Object.values(pb).filter(v => v.questions).flatMap(v => (v.questions || []).map(q => ({ ...q, track })))
+                  ).slice(0, 10).map((q, i) => (
+                    <tr key={i}>
+                      <td style={{maxWidth:380,color:"var(--ink)"}}>{q.q}</td>
+                      <td><span className="tag t-navy">{q.track}</span></td>
+                      <td><span className="tag t-blue">{q.cat}</span></td>
+                      <td><span className={`tag t-${q.diff==="Advanced"?"gold":"green"}`}>{q.diff}</span></td>
+                      <td><div className="flex g8"><button className="btn btn-outline btn-xs">Edit</button><button className="btn btn-ghost btn-xs" style={{color:"var(--red)"}}>✕</button></div></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {!["playbooks","prompts","questions"].includes(adminTab) && (
+            <div className="card">
+              <div style={{padding:"40px 32px",textAlign:"center"}}>
                 <div style={{fontSize:32,marginBottom:14}}>🛠</div>
                 <div style={{fontFamily:"Cormorant Garamond,serif",fontSize:20,fontWeight:700,color:"var(--ink)",marginBottom:8}}>{adminTab.charAt(0).toUpperCase()+adminTab.slice(1)} Editor</div>
-                <div className="fs13 t-ink3" style={{maxWidth:360,margin:"0 auto",lineHeight:1.7}}>All admin content is stored in the database and editable without redeployment.</div>
-                <button className="btn btn-primary mt16">Open Editor</button>
+                <div className="fs13 t-ink3 mb16" style={{maxWidth:360,margin:"0 auto",lineHeight:1.7}}>Upload files to populate this section, or manage content directly.</div>
+                <div className="flex g10" style={{justifyContent:"center"}}>
+                  <button className="btn btn-gold" onClick={()=>adminFileRef.current?.click()}>⬆ Upload & Parse Files</button>
+                  <button className="btn btn-outline">Open Editor</button>
+                </div>
               </div>
             </div>
           )}

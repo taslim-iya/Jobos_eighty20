@@ -78,17 +78,22 @@ Deno.serve(async (req) => {
 
     // Verify caller is admin (or service role for cron)
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) throw new Error("Unauthorized");
+    if (!authHeader?.startsWith("Bearer ")) throw new Error("Unauthorized");
     const token = authHeader.replace("Bearer ", "");
 
     // Allow service role key (used by cron) to bypass admin check
     const isServiceRole = token === SUPABASE_SERVICE_ROLE_KEY;
 
     if (!isServiceRole) {
-      const { data: { user: caller }, error: authErr } = await admin.auth.getUser(token);
-      if (authErr || !caller) throw new Error("Unauthorized");
+      // Create a client scoped to the caller's token
+      const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: claimsData, error: claimsErr } = await userClient.auth.getClaims(token);
+      if (claimsErr || !claimsData?.claims?.sub) throw new Error("Unauthorized");
+      const callerId = claimsData.claims.sub as string;
 
-      const { data: roleRow } = await admin.from("user_roles").select("role").eq("user_id", caller.id).eq("role", "admin").maybeSingle();
+      const { data: roleRow } = await admin.from("user_roles").select("role").eq("user_id", callerId).eq("role", "admin").maybeSingle();
       if (!roleRow) throw new Error("Admin access required");
     }
 

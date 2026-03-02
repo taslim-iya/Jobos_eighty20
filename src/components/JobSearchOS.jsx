@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { fetchJobs, upsertJob, deleteJob, fetchDocuments, upsertDocument, deleteDocument, uploadFile, deleteFile, exportToCSV, exportToText, fetchWebsites, upsertWebsite, deleteWebsite } from "@/lib/database";
 import { supabase } from "@/integrations/supabase/client";
+import { jsPDF } from "jspdf";
+import html2canvas from "html2canvas";
 
 /* ─────────────────────────────────────────────────────────────────────────────
    DESIGN SYSTEM — "FT Editorial Light"
@@ -1903,7 +1905,32 @@ Return the full tailored CV text only, no commentary.`;
           <div className="section-title">Build, Tailor & Generate</div>
         </div>
         <div className="flex g10">
-          <button className="btn btn-outline btn-sm">⬇ Export PDF</button>
+          <button className="btn btn-outline btn-sm" onClick={async () => {
+            const content = tab === "cover letter" ? coverLetter : (tailoredCV || cv);
+            if (!content) return;
+            const el = document.createElement("div");
+            el.style.cssText = "position:absolute;left:-9999px;top:0;width:794px;padding:48px 56px;font-family:Cormorant Garamond,serif;font-size:13px;line-height:1.8;color:#1a1a1a;background:#fff;white-space:pre-wrap;";
+            el.innerText = content;
+            document.body.appendChild(el);
+            try {
+              const canvas = await html2canvas(el, { scale: 2, useCORS: true });
+              const pdf = new jsPDF("p", "mm", "a4");
+              const imgData = canvas.toDataURL("image/png");
+              const imgW = 190;
+              const imgH = (canvas.height * imgW) / canvas.width;
+              let heightLeft = imgH;
+              let pos = 10;
+              pdf.addImage(imgData, "PNG", 10, pos, imgW, imgH);
+              heightLeft -= 277;
+              while (heightLeft > 0) {
+                pos = heightLeft - imgH + 10;
+                pdf.addPage();
+                pdf.addImage(imgData, "PNG", 10, pos, imgW, imgH);
+                heightLeft -= 277;
+              }
+              pdf.save(`${tab === "cover letter" ? "cover_letter" : "cv"}_${new Date().toISOString().slice(0,10)}.pdf`);
+            } finally { document.body.removeChild(el); }
+          }}>⬇ Export PDF</button>
           <button className="btn btn-primary btn-sm" onClick={()=>setTab("cover letter")}>✨ Write Cover Letter</button>
         </div>
       </div>

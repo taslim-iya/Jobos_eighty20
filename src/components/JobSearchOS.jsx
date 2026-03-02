@@ -3563,6 +3563,70 @@ Format the output clearly with headers and bullet points. Make it specific to fi
     if (adminFileRef.current) adminFileRef.current.value = "";
   };
 
+  // Manual job add state
+  const [showAddJob, setShowAddJob] = useState(false);
+  const [manualJob, setManualJob] = useState({ title: "", firm: "", location: "London", track: "ib", level: "undergrad", deadline: "Rolling", description: "", source: "Manual", url: "" });
+  const [addingJob, setAddingJob] = useState(false);
+
+  // All jobs list state
+  const [allJobs, setAllJobs] = useState([]);
+  const [loadingJobs, setLoadingJobs] = useState(false);
+  const [jobsPage, setJobsPage] = useState(0);
+  const JOBS_PER_PAGE = 20;
+
+  const loadAllJobs = async () => {
+    setLoadingJobs(true);
+    const { data } = await supabase.from("jobs").select("id, title, firm, stage, track, location, source, created_at, user_id, match_score, deadline").order("created_at", { ascending: false }).range(0, 200);
+    setAllJobs(data || []);
+    setLoadingJobs(false);
+  };
+
+  useEffect(() => {
+    if (adminTab === "scrape" && isAdmin && allJobs.length === 0) loadAllJobs();
+  }, [adminTab, isAdmin]);
+
+  const addManualJob = async () => {
+    if (!manualJob.title || !manualJob.firm) return;
+    setAddingJob(true);
+    try {
+      // Get all profiles to insert for everyone (or specific track)
+      const { data: profiles } = await supabase.from("profiles").select("user_id, target_track");
+      const targetProfiles = profiles?.filter(p => (p.target_track || "ib") === manualJob.track) || [];
+
+      if (targetProfiles.length === 0) {
+        // If no matching profiles, insert for all users
+        const { data: allProfiles } = await supabase.from("profiles").select("user_id");
+        for (const p of (allProfiles || [])) {
+          await supabase.from("jobs").insert({
+            user_id: p.user_id, title: manualJob.title, firm: manualJob.firm, stage: "saved",
+            deadline: manualJob.deadline, match_score: 85, tags: manualJob.track === "ib" ? ["IB"] : manualJob.track === "consulting" ? ["Consulting"] : ["Product"],
+            track: manualJob.track, experience_level: manualJob.level, location: manualJob.location,
+            description: manualJob.description, source: manualJob.source || "Manual",
+          });
+        }
+      } else {
+        for (const p of targetProfiles) {
+          await supabase.from("jobs").insert({
+            user_id: p.user_id, title: manualJob.title, firm: manualJob.firm, stage: "saved",
+            deadline: manualJob.deadline, match_score: 85, tags: manualJob.track === "ib" ? ["IB"] : manualJob.track === "consulting" ? ["Consulting"] : ["Product"],
+            track: manualJob.track, experience_level: manualJob.level, location: manualJob.location,
+            description: manualJob.description, source: manualJob.source || "Manual",
+          });
+        }
+      }
+      setManualJob({ title: "", firm: "", location: "London", track: "ib", level: "undergrad", deadline: "Rolling", description: "", source: "Manual", url: "" });
+      setShowAddJob(false);
+      loadAllJobs();
+    } catch (err) {
+      console.error("Manual add failed:", err);
+    }
+    setAddingJob(false);
+  };
+
+  const deleteAdminJob = async (jobId) => {
+    await supabase.from("jobs").delete().eq("id", jobId);
+    setAllJobs(prev => prev.filter(j => j.id !== jobId));
+  };
   return (
     <div className="page">
       <input type="file" ref={adminFileRef} style={{display:"none"}} multiple accept=".pdf,.docx,.doc,.txt,.csv,.xlsx,.png,.jpg" 
@@ -3619,41 +3683,112 @@ Format the output clearly with headers and bullet points. Make it specific to fi
           )}
 
           {adminTab==="scrape" && (
-            <div className="card">
-              <div className="card-header">
-                <div>
-                  <div className="card-title">🔄 Admin Job Scraper</div>
-                  <div className="card-subtitle">Crawl live jobs and populate all user pipelines based on their profiles</div>
+            <div>
+              {/* Scraper controls */}
+              <div className="card mb16">
+                <div className="card-header">
+                  <div>
+                    <div className="card-title">🔄 Admin Job Scraper</div>
+                    <div className="card-subtitle">Crawl live jobs and populate all user pipelines based on their profiles</div>
+                  </div>
+                  <div className="flex g8">
+                    {isAdmin && (
+                      <>
+                        <button className="btn btn-outline" onClick={() => setShowAddJob(v => !v)}>+ Add Job Manually</button>
+                        <button className="btn btn-gold" onClick={runAdminScrape} disabled={scrapeRunning}>
+                          {scrapeRunning ? "⏳ Scraping..." : "🚀 Run Scrape Now"}
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
-                {isAdmin && (
-                  <button className="btn btn-gold" onClick={runAdminScrape} disabled={scrapeRunning}>
-                    {scrapeRunning ? "⏳ Scraping..." : "🚀 Run Scrape Now"}
-                  </button>
+                {!isAdmin && <div className="alert a-red mb16">🔒 Admin access required to run scrapes.</div>}
+                {scrapeRunning && <div className="ai-pulse mb16"><div className="dot-spin"/>Crawling job boards and populating user pipelines...</div>}
+                {scrapeResult && !scrapeResult.error && (
+                  <div className="alert a-green mb16">✅ Scrape complete! Inserted <strong>{scrapeResult.inserted}</strong> new jobs across <strong>{scrapeResult.profiles}</strong> user profiles.</div>
                 )}
+                {scrapeResult?.error && <div className="alert a-red mb16">⚠ {scrapeResult.error}</div>}
               </div>
-              {!isAdmin && (
-                <div className="alert a-red mb16">🔒 Admin access required to run scrapes.</div>
-              )}
-              {scrapeRunning && (
-                <div className="ai-pulse mb16"><div className="dot-spin"/>Crawling job boards and populating user pipelines...</div>
-              )}
-              {scrapeResult && !scrapeResult.error && (
-                <div className="alert a-green mb16">
-                  ✅ Scrape complete! Inserted <strong>{scrapeResult.inserted}</strong> new jobs across <strong>{scrapeResult.profiles}</strong> user profiles.
+
+              {/* Manual Add Form */}
+              {showAddJob && (
+                <div className="card mb16">
+                  <div className="card-header"><div className="card-title">➕ Add Job Manually</div><button className="btn btn-ghost btn-sm" onClick={() => setShowAddJob(false)}>✕</button></div>
+                  <div className="grid g3 g16 mb16">
+                    <div className="fg"><label className="label">Job Title *</label><input className="input" placeholder="e.g. Summer Analyst 2026" value={manualJob.title} onChange={e => setManualJob(prev => ({...prev, title: e.target.value}))}/></div>
+                    <div className="fg"><label className="label">Firm *</label><input className="input" placeholder="e.g. Goldman Sachs" value={manualJob.firm} onChange={e => setManualJob(prev => ({...prev, firm: e.target.value}))}/></div>
+                    <div className="fg"><label className="label">Location</label><input className="input" placeholder="e.g. London" value={manualJob.location} onChange={e => setManualJob(prev => ({...prev, location: e.target.value}))}/></div>
+                  </div>
+                  <div className="grid g3 g16 mb16">
+                    <div className="fg"><label className="label">Track</label>
+                      <select className="input" value={manualJob.track} onChange={e => setManualJob(prev => ({...prev, track: e.target.value}))}>
+                        <option value="ib">Investment Banking</option><option value="consulting">Consulting</option><option value="product">Product</option>
+                      </select>
+                    </div>
+                    <div className="fg"><label className="label">Level</label>
+                      <select className="input" value={manualJob.level} onChange={e => setManualJob(prev => ({...prev, level: e.target.value}))}>
+                        <option value="undergrad">Undergraduate</option><option value="experienced">Experienced</option>
+                      </select>
+                    </div>
+                    <div className="fg"><label className="label">Deadline</label><input className="input" placeholder="e.g. Apr 15 or Rolling" value={manualJob.deadline} onChange={e => setManualJob(prev => ({...prev, deadline: e.target.value}))}/></div>
+                  </div>
+                  <div className="grid g2 g16 mb16">
+                    <div className="fg"><label className="label">Source</label><input className="input" placeholder="e.g. LinkedIn, Company Website" value={manualJob.source} onChange={e => setManualJob(prev => ({...prev, source: e.target.value}))}/></div>
+                    <div className="fg"><label className="label">URL</label><input className="input" placeholder="https://..." value={manualJob.url} onChange={e => setManualJob(prev => ({...prev, url: e.target.value}))}/></div>
+                  </div>
+                  <div className="fg mb16"><label className="label">Description</label><textarea className="input" rows={3} placeholder="Brief role description..." value={manualJob.description} onChange={e => setManualJob(prev => ({...prev, description: e.target.value}))} style={{resize:"vertical"}}/></div>
+                  <div className="flex g10">
+                    <button className="btn btn-primary" onClick={addManualJob} disabled={addingJob || !manualJob.title || !manualJob.firm}>
+                      {addingJob ? "⏳ Adding..." : "✅ Add to All Matching Users"}
+                    </button>
+                    <button className="btn btn-outline" onClick={() => setShowAddJob(false)}>Cancel</button>
+                  </div>
                 </div>
               )}
-              {scrapeResult?.error && (
-                <div className="alert a-red mb16">⚠ {scrapeResult.error}</div>
-              )}
-              <div className="fs13 t-ink3" style={{lineHeight:1.8}}>
-                <p>This scraper will:</p>
-                <ul style={{paddingLeft:20,marginTop:8}}>
-                  <li>Fetch all user profiles and group by track, level, and location</li>
-                  <li>Search job boards (LinkedIn, Indeed, eFinancialCareers, etc.) using Firecrawl</li>
-                  <li>Filter out expired/closed positions</li>
-                  <li>Insert matched jobs into each user's pipeline (avoiding duplicates)</li>
-                </ul>
-                <p style={{marginTop:12,color:"var(--ink4)"}}>💡 This also runs automatically every week via a scheduled task.</p>
+
+              {/* All Scraped Jobs Table */}
+              <div className="card">
+                <div className="card-header">
+                  <div>
+                    <div className="card-title">📋 All Scraped Jobs</div>
+                    <div className="card-subtitle">{allJobs.length} total jobs in database</div>
+                  </div>
+                  <div className="flex g8">
+                    <button className="btn btn-outline btn-sm" onClick={loadAllJobs} disabled={loadingJobs}>{loadingJobs ? "🔄" : "↻ Refresh"}</button>
+                  </div>
+                </div>
+                {loadingJobs ? (
+                  <div className="ai-pulse"><div className="dot-spin"/>Loading jobs...</div>
+                ) : (
+                  <>
+                    <table className="table">
+                      <thead><tr><th>Title</th><th>Firm</th><th>Track</th><th>Location</th><th>Source</th><th>Stage</th><th>Added</th><th>Actions</th></tr></thead>
+                      <tbody>
+                        {allJobs.slice(jobsPage * JOBS_PER_PAGE, (jobsPage + 1) * JOBS_PER_PAGE).map(j => (
+                          <tr key={j.id}>
+                            <td className="fw6" style={{color:"var(--ink)", maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{j.title}</td>
+                            <td>{j.firm}</td>
+                            <td><span className="tag t-navy">{j.track === "ib" ? "IB" : j.track === "consulting" ? "Consulting" : "Product"}</span></td>
+                            <td style={{fontSize:11, color:"var(--ink3)"}}>{j.location || "—"}</td>
+                            <td style={{fontSize:11, color:"var(--ink3)"}}>{j.source || "—"}</td>
+                            <td><span className={`tag t-${j.stage === "saved" ? "ink" : j.stage === "offer" ? "green" : "gold"}`}>{j.stage}</span></td>
+                            <td className="mono fs11">{new Date(j.created_at).toLocaleDateString()}</td>
+                            <td><button className="btn btn-ghost btn-xs" onClick={() => deleteAdminJob(j.id)} style={{color:"var(--red)"}}>✕</button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {allJobs.length > JOBS_PER_PAGE && (
+                      <div className="flex items-c j-between" style={{padding:"12px 0"}}>
+                        <div className="fs11 t-ink4">Showing {jobsPage * JOBS_PER_PAGE + 1}–{Math.min((jobsPage + 1) * JOBS_PER_PAGE, allJobs.length)} of {allJobs.length}</div>
+                        <div className="flex g8">
+                          <button className="btn btn-outline btn-xs" disabled={jobsPage === 0} onClick={() => setJobsPage(p => p - 1)}>← Prev</button>
+                          <button className="btn btn-outline btn-xs" disabled={(jobsPage + 1) * JOBS_PER_PAGE >= allJobs.length} onClick={() => setJobsPage(p => p + 1)}>Next →</button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             </div>
           )}

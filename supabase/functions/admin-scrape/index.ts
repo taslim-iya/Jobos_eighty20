@@ -28,8 +28,8 @@ function cleanText(v: unknown): string {
   return String(v || "").replace(/\s+/g, " ").trim();
 }
 
-const MAX_JOBS_PER_GROUP = 30;
-const JOB_LINK_KEYWORDS = /(job|jobs|career|careers|opening|opportunit|intern|analyst|associate|apply)/i;
+const MAX_JOBS_PER_GROUP = 80;
+const EXCLUDED_DOMAINS = /(reddit\.com|quora\.com|medium\.com|youtube\.com|wikipedia\.org|facebook\.com|twitter\.com|instagram\.com)/i;
 
 async function firecrawlSearch(apiKey: string, query: string) {
   const res = await fetch("https://api.firecrawl.dev/v1/search", {
@@ -38,7 +38,7 @@ async function firecrawlSearch(apiKey: string, query: string) {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ query, limit: 20 }),
+    body: JSON.stringify({ query, limit: 40 }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return [];
@@ -140,7 +140,7 @@ Deno.serve(async (req) => {
         if (result.status !== "fulfilled") continue;
         for (const row of result.value) {
           const url = cleanText(row.url);
-          if (!url || !JOB_LINK_KEYWORDS.test(url) || seenUrls.has(url.toLowerCase())) continue;
+          if (!url || seenUrls.has(url.toLowerCase()) || EXCLUDED_DOMAINS.test(url)) continue;
           seenUrls.add(url.toLowerCase());
 
           const title = cleanText(row.title || "Job Opening");

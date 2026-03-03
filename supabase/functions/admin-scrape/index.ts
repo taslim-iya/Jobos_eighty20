@@ -71,18 +71,13 @@ const NOT_A_JOB_URL = /\.(pdf|xls|xlsx|doc|docx|ppt|pptx)(\?|$)/i;
 const NOT_A_JOB_DOMAIN = /(alumneye|argaamplus|s3\.amazonaws|blog\.|news\.|forum\.|wiki\.)/i;
 const JOB_SIGNALS_TITLE = /(analyst|associate|intern|manager|director|officer|summer|graduate|junior|senior|specialist|coordinator|program|opening|vacancy|hire|career|position|job)/i;
 const JOB_SIGNALS_DESC = /(apply|application|deadline|responsibilities|qualifications|requirements|salary|compensation|team|role|hiring|recruit|candidate|resume|cv|cover letter)/i;
-const JOB_BOARD_DOMAINS = /(linkedin|indeed|glassdoor|efinancialcareers|workday|greenhouse|lever\.co|smartrecruiters|myworkdayjobs|brightnetwork|targetjobs|gradcracker|prospects\.ac|milkround)/i;
+const JOB_BOARD_DOMAINS = /(linkedin|indeed|glassdoor|efinancialcareers|workday|greenhouse|lever\.co|smartrecruiters|myworkdayjobs|brightnetwork|targetjobs|gradcracker|prospects\.ac|milkround|handshake)/i;
 
 function isActualJobListing(title: string, desc: string, url: string): boolean {
-  // Always accept known job board URLs
   if (JOB_BOARD_DOMAINS.test(url)) return true;
-  // Reject non-job domains
   if (NOT_A_JOB_DOMAIN.test(url)) return false;
-  // Reject file downloads
   if (NOT_A_JOB_URL.test(url)) return false;
-  // Reject question/article/guide titles
   if (NOT_A_JOB_TITLE.test(title)) return false;
-  // Must have at least one job signal in title OR description
   if (!JOB_SIGNALS_TITLE.test(title) && !JOB_SIGNALS_DESC.test(desc)) return false;
   return true;
 }
@@ -106,11 +101,9 @@ Deno.serve(async (req) => {
     if (!authHeader?.startsWith("Bearer ")) throw new Error("Unauthorized");
     const token = authHeader.replace("Bearer ", "");
 
-    // Allow service role key (used by cron) to bypass admin check
     const isServiceRole = token === SUPABASE_SERVICE_ROLE_KEY;
 
     if (!isServiceRole) {
-      // Create a client scoped to the caller's token
       const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
         global: { headers: { Authorization: authHeader } },
       });
@@ -128,12 +121,25 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ message: "No profiles found", inserted: 0 }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    console.log(`Admin scrape started for ${profiles.length} profiles`);
+    // Fetch ALL user websites with their keywords and job titles
+    const { data: allWebsites } = await admin.from("websites").select("user_id, url, label, keywords, job_titles");
+    const websitesByUser = new Map<string, Array<{ url: string; label: string; keywords: string[]; job_titles: string[] }>>();
+    for (const w of (allWebsites || [])) {
+      if (!websitesByUser.has(w.user_id)) websitesByUser.set(w.user_id, []);
+      websitesByUser.get(w.user_id)!.push({
+        url: w.url,
+        label: w.label || w.url,
+        keywords: w.keywords || [],
+        job_titles: w.job_titles || [],
+      });
+    }
+
+    console.log(`Admin scrape started for ${profiles.length} profiles, ${(allWebsites || []).length} website configs`);
 
     let totalInserted = 0;
     const errors: string[] = [];
 
-    // Group profiles by track+level+location to avoid duplicate searches
+    // Group profiles by track+level+location
     const groups = new Map<string, { userIds: string[]; track: string; level: string; location: string }>();
     for (const p of profiles) {
       const track = p.target_track || "ib";
@@ -149,11 +155,44 @@ Deno.serve(async (req) => {
     for (const [key, group] of groups) {
       console.log(`Scraping for group: ${key} (${group.userIds.length} users)`);
 
-      const queries = (TRACK_QUERIES[group.track] || TRACK_QUERIES.ib).map(
+      // Base queries from track config
+      const baseQueries = (TRACK_QUERIES[group.track] || TRACK_QUERIES.ib).map(
         q => `${q} ${group.location} ${group.level === "undergrad" ? "intern graduate summer analyst" : "experienced associate"}`
       );
 
-      const allResults = await Promise.allSettled(queries.map(q => firecrawlSearch(FIRECRAWL_API_KEY, q)));
+      // Always include LinkedIn-specific searches
+      const linkedinQueries = (TRACK_QUERIES[group.track] || TRACK_QUERIES.ib).map(
+        q => `site:linkedin.com/jobs ${q} ${group.location}`
+      );
+
+      // Collect custom queries from user websites in this group
+      const customQueries: string[] = [];
+      for (const userId of group.userIds) {
+        const userSites = websitesByUser.get(userId) || [];
+        for (const site of userSites) {
+          // Build search queries from job titles + keywords scoped to this site
+          const titles = site.job_titles || [];
+          const kw = site.keywords || [];
+          if (titles.length > 0 || kw.length > 0) {
+            const titleStr = titles.join(" OR ");
+            const kwStr = kw.join(" ");
+            // Search within the specific site domain
+            const siteDomain = site.url.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+            customQueries.push(`site:${siteDomain} ${titleStr} ${kwStr} ${group.location}`);
+          } else {
+            // If no custom keywords, search the site with track defaults
+            const siteDomain = site.url.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+            const trackDefault = (TRACK_QUERIES[group.track] || TRACK_QUERIES.ib)[0];
+            customQueries.push(`site:${siteDomain} ${trackDefault} ${group.location}`);
+          }
+        }
+      }
+
+      // Deduplicate queries
+      const allQueries = [...new Set([...baseQueries, ...linkedinQueries, ...customQueries])];
+      console.log(`Running ${allQueries.length} search queries for group ${key}`);
+
+      const allResults = await Promise.allSettled(allQueries.map(q => firecrawlSearch(FIRECRAWL_API_KEY, q)));
 
       const jobs: Array<{ title: string; firm: string; url: string; description: string; source: string; deadline: string; location: string; track: string; level: string }> = [];
       const seenUrls = new Set<string>();
@@ -234,6 +273,7 @@ Deno.serve(async (req) => {
         success: true, 
         inserted: totalInserted, 
         profiles: profiles.length,
+        websites: (allWebsites || []).length,
         errors: errors.length > 0 ? errors : undefined,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }

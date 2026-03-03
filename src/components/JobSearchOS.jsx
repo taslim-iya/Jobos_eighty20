@@ -1799,6 +1799,8 @@ function WebsiteManager() {
   const [newFreq, setNewFreq] = useState("daily");
   const [newLocation, setNewLocation] = useState("London");
   const [newTrack, setNewTrack] = useState("ib");
+  const [newKeywords, setNewKeywords] = useState("");
+  const [newJobTitles, setNewJobTitles] = useState("");
   const [scanning, setScanning] = useState(null);
   const [scanResults, setScanResults] = useState({});
   const [adding, setAdding] = useState(false);
@@ -1807,19 +1809,21 @@ function WebsiteManager() {
     if (!user) return;
     fetchWebsites(user.id).then(({ data }) => {
       if (data) {
-        setSites(data.map(s => ({ id: s.id, url: s.url, label: s.label, freq: s.frequency, lastScanned: s.last_scanned, jobsFound: s.jobs_found, status: s.status })));
+        setSites(data.map(s => ({ id: s.id, url: s.url, label: s.label, freq: s.frequency, lastScanned: s.last_scanned, jobsFound: s.jobs_found, status: s.status, keywords: s.keywords || [], job_titles: s.job_titles || [] })));
       }
     });
   }, [user]);
 
   const addSite = async () => {
     if (!newUrl.trim()) return;
-    const site = { url: newUrl, label: newLabel || newUrl, frequency: newFreq, last_scanned: "Never", jobs_found: 0, status: "idle" };
+    const keywords = newKeywords.split(",").map(k => k.trim()).filter(Boolean);
+    const jobTitles = newJobTitles.split(",").map(k => k.trim()).filter(Boolean);
+    const site = { url: newUrl, label: newLabel || newUrl, frequency: newFreq, last_scanned: "Never", jobs_found: 0, status: "idle", keywords, job_titles: jobTitles };
     if (user) {
       const { data } = await upsertWebsite(user.id, site);
-      if (data) setSites(prev => [...prev, { id: data.id, url: data.url, label: data.label, freq: data.frequency, lastScanned: data.last_scanned, jobsFound: data.jobs_found, status: data.status }]);
+      if (data) setSites(prev => [...prev, { id: data.id, url: data.url, label: data.label, freq: data.frequency, lastScanned: data.last_scanned, jobsFound: data.jobs_found, status: data.status, keywords: data.keywords || [], job_titles: data.job_titles || [] }]);
     }
-    setNewUrl(""); setNewLabel(""); setAdding(false);
+    setNewUrl(""); setNewLabel(""); setNewKeywords(""); setNewJobTitles(""); setAdding(false);
   };
 
   const scanSite = async (site) => {
@@ -1827,8 +1831,10 @@ function WebsiteManager() {
     setSites(prev => prev.map(s => s.id === site.id ? { ...s, status: "scanning" } : s));
     const trackKw = { ib: "investment banking analyst M&A ECM DCM summer analyst", consulting: "management consulting business analyst strategy", product: "product manager APM growth PM" };
     try {
+      const extraKeywords = (site.keywords || []).join(" ");
+      const extraTitles = (site.job_titles || []).join(" ");
       const crawled = await crawlJobs({
-        query: `${trackKw[newTrack] || trackKw.ib} ${newLocation || ""}`,
+        query: `${extraTitles || trackKw[newTrack] || trackKw.ib} ${extraKeywords} ${newLocation || ""}`,
         track: newTrack,
         level: "",
         location: newLocation,
@@ -1842,13 +1848,8 @@ function WebsiteManager() {
       setSites(prev => prev.map(s => s.id === site.id ? { ...s, status: "active", lastScanned: "Just now", jobsFound: found } : s));
       if (user) {
         upsertWebsite(user.id, {
-          id: site.id,
-          url: site.url,
-          label: site.label,
-          frequency: site.freq,
-          status: "active",
-          last_scanned: "Just now",
-          jobs_found: found,
+          id: site.id, url: site.url, label: site.label, frequency: site.freq,
+          status: "active", last_scanned: "Just now", jobs_found: found,
         });
       }
     } catch {
@@ -1865,14 +1866,18 @@ function WebsiteManager() {
         <div><div className="eyebrow">Website Manager</div><div className="section-title">Job Scanning Targets</div></div>
         <button className="btn btn-primary" onClick={()=>setAdding(true)}>+ Add Website</button>
       </div>
-      <div className="alert a-blue mb20">🤖 <span>Jobs are automatically scraped weekly by the admin and populated based on your profile. You can manage which websites to track below.</span></div>
+      <div className="alert a-blue mb20">🤖 <span>Websites and keywords you add here are included in the weekly admin scrape — including LinkedIn. Add job titles and keywords to refine results.</span></div>
       {adding && (
         <div className="card mb20">
           <div className="card-header"><div className="card-title">Add New Website</div><button className="btn btn-ghost btn-sm" onClick={()=>setAdding(false)}>✕</button></div>
           <div className="grid g3 g16 mb16">
             <div className="fg"><label className="label">Website URL</label><input className="input" placeholder="https://..." value={newUrl} onChange={e=>setNewUrl(e.target.value)}/></div>
-            <div className="fg"><label className="label">Label</label><input className="input" placeholder="e.g. Goldman Sachs" value={newLabel} onChange={e=>setNewLabel(e.target.value)}/></div>
+            <div className="fg"><label className="label">Label</label><input className="input" placeholder="e.g. Goldman Sachs Careers" value={newLabel} onChange={e=>setNewLabel(e.target.value)}/></div>
             <div className="fg"><label className="label">Frequency</label><select className="input" value={newFreq} onChange={e=>setNewFreq(e.target.value)}><option value="hourly">Hourly</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></div>
+          </div>
+          <div className="grid g2 g16 mb16">
+            <div className="fg"><label className="label">Job Titles <span className="t-ink4 fs11">(comma-separated)</span></label><input className="input" placeholder="e.g. Analyst, Associate, Summer Intern" value={newJobTitles} onChange={e=>setNewJobTitles(e.target.value)}/></div>
+            <div className="fg"><label className="label">Keywords <span className="t-ink4 fs11">(comma-separated)</span></label><input className="input" placeholder="e.g. M&A, DCM, quantitative, restructuring" value={newKeywords} onChange={e=>setNewKeywords(e.target.value)}/></div>
           </div>
           <div className="flex g10"><button className="btn btn-primary" onClick={addSite}>Add Website</button><button className="btn btn-outline" onClick={()=>setAdding(false)}>Cancel</button></div>
         </div>
@@ -1883,7 +1888,16 @@ function WebsiteManager() {
           <div key={site.id}>
             <div className="site-row">
               <div className={`site-status-dot ${site.status === "active" ? "dot-active" : site.status === "scanning" ? "dot-scanning" : "dot-idle"}`}/>
-              <div style={{flex:1,minWidth:0}}><div className="site-url" style={{marginBottom:2}}>{site.label}</div><div className="fs11 t-ink4">{site.url}</div></div>
+              <div style={{flex:1,minWidth:0}}>
+                <div className="site-url" style={{marginBottom:2}}>{site.label}</div>
+                <div className="fs11 t-ink4">{site.url}</div>
+                {(site.job_titles?.length > 0 || site.keywords?.length > 0) && (
+                  <div className="flex g4 flex-wrap mt4">
+                    {(site.job_titles || []).map((t,i)=><span key={`t${i}`} className="tag t-blue" style={{fontSize:9}}>🏷 {t}</span>)}
+                    {(site.keywords || []).map((k,i)=><span key={`k${i}`} className="tag t-gold" style={{fontSize:9}}>🔑 {k}</span>)}
+                  </div>
+                )}
+              </div>
               <div className="flex items-c g8">
                 <span className="tag t-ink">{site.freq}</span><div className="site-meta">Last: {site.lastScanned}</div>
                 {site.jobsFound > 0 && <span className="tag t-green">{site.jobsFound} jobs</span>}
@@ -1905,8 +1919,8 @@ function WebsiteManager() {
             <div key={s.label} className="flex items-c j-between" style={{padding:"9px 0",borderBottom:"1px solid var(--border2)"}}>
               <div><div className="fw5 fs12" style={{color:"var(--ink)"}}>{s.label}</div><div className="fs11 t-ink4">{s.url}</div></div>
               <button className="btn btn-outline btn-xs" onClick={async()=>{
-                const site={url:s.url,label:s.label,frequency:"daily",last_scanned:"Never",jobs_found:0,status:"idle"};
-                if(user){const{data}=await upsertWebsite(user.id,site);if(data)setSites(prev=>[...prev,{id:data.id,url:data.url,label:data.label,freq:data.frequency,lastScanned:data.last_scanned,jobsFound:data.jobs_found,status:data.status}]);}
+                const site={url:s.url,label:s.label,frequency:"daily",last_scanned:"Never",jobs_found:0,status:"idle",keywords:[],job_titles:[]};
+                if(user){const{data}=await upsertWebsite(user.id,site);if(data)setSites(prev=>[...prev,{id:data.id,url:data.url,label:data.label,freq:data.frequency,lastScanned:data.last_scanned,jobsFound:data.jobs_found,status:data.status,keywords:data.keywords||[],job_titles:data.job_titles||[]}]);}
               }}>+ Add</button>
             </div>
           ))}
@@ -1921,7 +1935,6 @@ function WebsiteManager() {
     </div>
   );
 }
-
 /* ════════════════════════════════════════════════════════════════════════════
    PAGE: CV + COVER LETTERS
 ══════════════════════════════════════════════════════════════════════════════ */

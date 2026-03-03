@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { messages, systemPrompt, useCase } = await req.json();
+    const { messages, systemPrompt, useCase, tools, tool_choice } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
@@ -33,6 +33,20 @@ serve(async (req) => {
       system = "Return only a JSON array of job objects found. No markdown. Each object: {title, location, deadline, description}.";
     }
 
+    const requestBody: any = {
+      model: "google/gemini-3-flash-preview",
+      messages: [
+        { role: "system", content: system },
+        ...messages,
+      ],
+      stream: false,
+      max_tokens: 2000,
+    };
+
+    // Pass through tools and tool_choice if provided
+    if (tools) requestBody.tools = tools;
+    if (tool_choice) requestBody.tool_choice = tool_choice;
+
     const response = await fetch(
       "https://ai.gateway.lovable.dev/v1/chat/completions",
       {
@@ -41,15 +55,7 @@ serve(async (req) => {
           Authorization: `Bearer ${LOVABLE_API_KEY}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          model: "google/gemini-3-flash-preview",
-          messages: [
-            { role: "system", content: system },
-            ...messages,
-          ],
-          stream: false,
-          max_tokens: 2000,
-        }),
+        body: JSON.stringify(requestBody),
       }
     );
 
@@ -75,6 +81,14 @@ serve(async (req) => {
     }
 
     const data = await response.json();
+    
+    // If tool calls are present, return the full choices object
+    if (data.choices?.[0]?.message?.tool_calls) {
+      return new Response(JSON.stringify(data), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const content =
       data.choices?.[0]?.message?.content || "No response generated.";
 

@@ -1298,7 +1298,6 @@ const NAV = [
   ]},
   { section: "Discover", items: [
     { id:"discover",  icon:"🔍", label:"Job Discovery", badge:"NEW", badgeGreen:true },
-    { id:"websites",  icon:"🌐", label:"Website Manager" },
     { id:"pipeline",  icon:"🗃", label:"CRM Pipeline" },
   ]},
   { section: "Prepare", items: [
@@ -1313,6 +1312,7 @@ const NAV = [
   ]},
   { section: "Admin", items: [
     { id:"admin", icon:"⚙️", label:"Admin Console" },
+    { id:"websites",  icon:"🌐", label:"Website Manager" },
   ]},
 ];
 
@@ -1804,6 +1804,21 @@ function WebsiteManager() {
   const [scanning, setScanning] = useState(null);
   const [scanResults, setScanResults] = useState({});
   const [adding, setAdding] = useState(false);
+  const [addMode, setAddMode] = useState("website"); // "website" or "keywords"
+  const [showPresets, setShowPresets] = useState(false);
+
+  const KEYWORD_PRESETS = {
+    "Investment Banking": { titles: ["Summer Analyst", "Analyst", "Associate", "VP"], keywords: ["M&A", "ECM", "DCM", "Leveraged Finance", "restructuring"] },
+    "Sales & Trading": { titles: ["Summer Analyst", "Analyst", "Trader", "Associate"], keywords: ["equities", "FICC", "rates", "FX", "derivatives", "commodities"] },
+    "Asset Management": { titles: ["Analyst", "Associate", "Portfolio Manager"], keywords: ["equity research", "fixed income", "quantitative", "portfolio", "fund"] },
+    "Private Equity": { titles: ["Analyst", "Associate", "Vice President"], keywords: ["buyout", "growth equity", "LBO", "due diligence", "portfolio company"] },
+    "Management Consulting": { titles: ["Analyst", "Associate", "Consultant", "Business Analyst"], keywords: ["strategy", "operations", "transformation", "advisory", "digital"] },
+    "Strategy Consulting": { titles: ["Strategy Analyst", "Associate", "Consultant"], keywords: ["corporate strategy", "growth strategy", "market entry", "due diligence"] },
+    "Big 4 / Advisory": { titles: ["Analyst", "Associate", "Consultant", "Manager"], keywords: ["audit", "tax", "advisory", "deals", "risk", "forensic", "valuation"] },
+    "Product Management": { titles: ["APM", "Product Manager", "Product Analyst"], keywords: ["growth", "product", "user research", "roadmap", "agile"] },
+    "Data / Quant": { titles: ["Quant Analyst", "Data Scientist", "Data Analyst"], keywords: ["quantitative", "python", "machine learning", "statistical", "modelling"] },
+    "Tech / SWE": { titles: ["Software Engineer", "SWE Intern", "Developer"], keywords: ["full-stack", "backend", "frontend", "cloud", "API"] },
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -1815,15 +1830,18 @@ function WebsiteManager() {
   }, [user]);
 
   const addSite = async () => {
-    if (!newUrl.trim()) return;
     const keywords = newKeywords.split(",").map(k => k.trim()).filter(Boolean);
     const jobTitles = newJobTitles.split(",").map(k => k.trim()).filter(Boolean);
-    const site = { url: newUrl, label: newLabel || newUrl, frequency: newFreq, last_scanned: "Never", jobs_found: 0, status: "idle", keywords, job_titles: jobTitles };
+    if (addMode === "website" && !newUrl.trim()) return;
+    if (addMode === "keywords" && jobTitles.length === 0 && keywords.length === 0) return;
+    const url = addMode === "keywords" ? "https://www.linkedin.com/jobs" : newUrl;
+    const label = addMode === "keywords" ? (newLabel || jobTitles.join(", ") || keywords.join(", ")) : (newLabel || newUrl);
+    const site = { url, label, frequency: newFreq, last_scanned: "Never", jobs_found: 0, status: "idle", keywords, job_titles: jobTitles };
     if (user) {
       const { data } = await upsertWebsite(user.id, site);
       if (data) setSites(prev => [...prev, { id: data.id, url: data.url, label: data.label, freq: data.frequency, lastScanned: data.last_scanned, jobsFound: data.jobs_found, status: data.status, keywords: data.keywords || [], job_titles: data.job_titles || [] }]);
     }
-    setNewUrl(""); setNewLabel(""); setNewKeywords(""); setNewJobTitles(""); setAdding(false);
+    setNewUrl(""); setNewLabel(""); setNewKeywords(""); setNewJobTitles(""); setAdding(false); setAddMode("website");
   };
 
   const scanSite = async (site) => {
@@ -1864,22 +1882,61 @@ function WebsiteManager() {
     <div className="page">
       <div className="section-header">
         <div><div className="eyebrow">Website Manager</div><div className="section-title">Job Scanning Targets</div></div>
-        <button className="btn btn-primary" onClick={()=>setAdding(true)}>+ Add Website</button>
+        <div className="flex g8">
+          <button className="btn btn-outline" onClick={()=>{setAdding(true);setAddMode("keywords")}}>+ Add by Keywords</button>
+          <button className="btn btn-primary" onClick={()=>{setAdding(true);setAddMode("website")}}>+ Add Website</button>
+        </div>
       </div>
-      <div className="alert a-blue mb20">🤖 <span>Websites and keywords you add here are included in the weekly admin scrape — including LinkedIn. Add job titles and keywords to refine results.</span></div>
+      <div className="alert a-blue mb20">🤖 <span>Add websites or keyword-only searches — both feed into the weekly admin scrape including LinkedIn. Use presets for quick setup.</span></div>
       {adding && (
         <div className="card mb20">
-          <div className="card-header"><div className="card-title">Add New Website</div><button className="btn btn-ghost btn-sm" onClick={()=>setAdding(false)}>✕</button></div>
-          <div className="grid g3 g16 mb16">
-            <div className="fg"><label className="label">Website URL</label><input className="input" placeholder="https://..." value={newUrl} onChange={e=>setNewUrl(e.target.value)}/></div>
-            <div className="fg"><label className="label">Label</label><input className="input" placeholder="e.g. Goldman Sachs Careers" value={newLabel} onChange={e=>setNewLabel(e.target.value)}/></div>
-            <div className="fg"><label className="label">Frequency</label><select className="input" value={newFreq} onChange={e=>setNewFreq(e.target.value)}><option value="hourly">Hourly</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></div>
+          <div className="card-header">
+            <div className="flex items-c g12">
+              <div className="card-title">{addMode === "keywords" ? "Add Keyword Search" : "Add New Website"}</div>
+              <div className="flex g4">
+                <button className={`btn btn-xs ${addMode==="website"?"btn-primary":"btn-outline"}`} onClick={()=>setAddMode("website")}>Website</button>
+                <button className={`btn btn-xs ${addMode==="keywords"?"btn-primary":"btn-outline"}`} onClick={()=>setAddMode("keywords")}>Keywords Only</button>
+              </div>
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={()=>{setAdding(false);setShowPresets(false)}}>✕</button>
+          </div>
+          {addMode === "website" && (
+            <div className="grid g3 g16 mb16">
+              <div className="fg"><label className="label">Website URL</label><input className="input" placeholder="https://..." value={newUrl} onChange={e=>setNewUrl(e.target.value)}/></div>
+              <div className="fg"><label className="label">Label</label><input className="input" placeholder="e.g. Goldman Sachs Careers" value={newLabel} onChange={e=>setNewLabel(e.target.value)}/></div>
+              <div className="fg"><label className="label">Frequency</label><select className="input" value={newFreq} onChange={e=>setNewFreq(e.target.value)}><option value="hourly">Hourly</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></div>
+            </div>
+          )}
+          {addMode === "keywords" && (
+            <div className="mb16">
+              <div className="fg mb12"><label className="label">Label <span className="t-ink4 fs11">(optional)</span></label><input className="input" placeholder="e.g. IB Summer Analyst Search" value={newLabel} onChange={e=>setNewLabel(e.target.value)}/></div>
+            </div>
+          )}
+          <div className="mb12">
+            <button className="btn btn-ghost btn-xs" onClick={()=>setShowPresets(!showPresets)} style={{marginBottom:8}}>
+              {showPresets ? "▾ Hide Presets" : "▸ Auto-fill from Presets"}
+            </button>
+            {showPresets && (
+              <div className="flex g6 flex-wrap">
+                {Object.entries(KEYWORD_PRESETS).map(([cat, vals]) => (
+                  <button key={cat} className="btn btn-outline btn-xs" style={{fontSize:10}} onClick={() => {
+                    const existingTitles = newJobTitles ? newJobTitles.split(",").map(t=>t.trim()).filter(Boolean) : [];
+                    const existingKw = newKeywords ? newKeywords.split(",").map(k=>k.trim()).filter(Boolean) : [];
+                    const mergedTitles = [...new Set([...existingTitles, ...vals.titles])];
+                    const mergedKw = [...new Set([...existingKw, ...vals.keywords])];
+                    setNewJobTitles(mergedTitles.join(", "));
+                    setNewKeywords(mergedKw.join(", "));
+                    if (!newLabel) setNewLabel(cat);
+                  }}>{cat}</button>
+                ))}
+              </div>
+            )}
           </div>
           <div className="grid g2 g16 mb16">
             <div className="fg"><label className="label">Job Titles <span className="t-ink4 fs11">(comma-separated)</span></label><input className="input" placeholder="e.g. Analyst, Associate, Summer Intern" value={newJobTitles} onChange={e=>setNewJobTitles(e.target.value)}/></div>
             <div className="fg"><label className="label">Keywords <span className="t-ink4 fs11">(comma-separated)</span></label><input className="input" placeholder="e.g. M&A, DCM, quantitative, restructuring" value={newKeywords} onChange={e=>setNewKeywords(e.target.value)}/></div>
           </div>
-          <div className="flex g10"><button className="btn btn-primary" onClick={addSite}>Add Website</button><button className="btn btn-outline" onClick={()=>setAdding(false)}>Cancel</button></div>
+          <div className="flex g10"><button className="btn btn-primary" onClick={addSite}>{addMode === "keywords" ? "Add Keyword Search" : "Add Website"}</button><button className="btn btn-outline" onClick={()=>{setAdding(false);setShowPresets(false)}}>Cancel</button></div>
         </div>
       )}
       <div className="card mb20">

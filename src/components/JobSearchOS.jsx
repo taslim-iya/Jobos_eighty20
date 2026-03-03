@@ -1937,11 +1937,105 @@ function CVStudio({ jobs }) {
   const [tone, setTone] = useState("professional");
   const [generatedCL, setGeneratedCL] = useState("");
   const [generating, setGenerating] = useState(false);
-  const [atsScores, setAtsScores] = useState({ keyword: 88, format: 95, quant: 82, length: 91 });
+  const [atsScores, setAtsScores] = useState({ keyword: 0, format: 0, quant: 0, length: 0 });
+  const [atsAnalyzing, setAtsAnalyzing] = useState(false);
+  const [atsFeedback, setAtsFeedback] = useState([]);
   const [tailoring, setTailoring] = useState(false);
   const [tailoredCV, setTailoredCV] = useState("");
   const [uploading, setUploading] = useState(false);
   const cvFileRef = useRef(null);
+
+  // Real ATS scoring via AI
+  const runAtsAnalysis = useCallback(async () => {
+    if (!cv || cv.trim().length < 50) {
+      setAtsScores({ keyword: 0, format: 0, quant: 0, length: 0 });
+      setAtsFeedback([]);
+      return;
+    }
+    setAtsAnalyzing(true);
+    try {
+      const prompt = `Analyze this CV/resume for ATS (Applicant Tracking System) compatibility. Score each dimension 0-100 and provide 3-4 specific, actionable suggestions.
+
+CV TEXT:
+${cv.slice(0, 6000)}
+
+${jobDesc ? `TARGET JOB DESCRIPTION:\n${jobDesc.slice(0, 2000)}` : "No specific job description provided — score against general finance/consulting standards."}
+
+You MUST respond by calling the score_ats function.`;
+
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+      const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/ai-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_KEY}` },
+        body: JSON.stringify({
+          messages: [
+            { role: "system", content: "You are an ATS analysis expert for finance and consulting CVs. Always use the score_ats tool to return structured results." },
+            { role: "user", content: prompt }
+          ],
+          tools: [{
+            type: "function",
+            function: {
+              name: "score_ats",
+              description: "Return ATS compatibility scores and suggestions",
+              parameters: {
+                type: "object",
+                properties: {
+                  keyword: { type: "number", description: "Keyword match score 0-100: how well the CV matches industry keywords and the JD if provided" },
+                  format: { type: "number", description: "Format compliance score 0-100: ATS-safe formatting, no tables/images/columns, proper headings" },
+                  quant: { type: "number", description: "Quantification score 0-100: use of numbers, metrics, percentages in achievements" },
+                  length: { type: "number", description: "Length optimization score 0-100: appropriate length, no wasted space, concise bullets" },
+                  suggestions: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        type: { type: "string", enum: ["warning", "tip", "good"] },
+                        text: { type: "string" }
+                      },
+                      required: ["type", "text"]
+                    },
+                    description: "3-4 specific actionable suggestions"
+                  }
+                },
+                required: ["keyword", "format", "quant", "length", "suggestions"],
+                additionalProperties: false
+              }
+            }
+          }],
+          tool_choice: { type: "function", function: { name: "score_ats" } }
+        })
+      });
+
+      if (!res.ok) throw new Error("ATS analysis failed");
+      const data = await res.json();
+      
+      // Parse tool call response
+      let parsed;
+      const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
+      if (toolCall) {
+        parsed = JSON.parse(toolCall.function.arguments);
+      } else {
+        // Fallback: try to parse from content
+        const content = data.choices?.[0]?.message?.content || "";
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
+      }
+
+      if (parsed) {
+        setAtsScores({
+          keyword: Math.min(100, Math.max(0, Math.round(parsed.keyword || 0))),
+          format: Math.min(100, Math.max(0, Math.round(parsed.format || 0))),
+          quant: Math.min(100, Math.max(0, Math.round(parsed.quant || 0))),
+          length: Math.min(100, Math.max(0, Math.round(parsed.length || 0))),
+        });
+        setAtsFeedback(parsed.suggestions || []);
+      }
+    } catch (err) {
+      console.error("ATS analysis error:", err);
+    }
+    setAtsAnalyzing(false);
+  }, [cv, jobDesc]);
 
   const handleCVUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -2338,31 +2432,49 @@ Return the full tailored CV text only, no commentary.`;
           <div>
             <div className="card mb16">
               <div className="card-header">
-                <div className="card-title">ATS Score</div>
-                <span className="tag t-green">{Math.round(Object.values(atsScores).reduce((a,b)=>a+b)/4)} / 100</span>
+                <div>
+                  <div className="card-title">ATS Score</div>
+                  {atsAnalyzing && <div className="fs11 t-ink4 mt4">Analyzing...</div>}
+                </div>
+                <div className="flex g8 items-c">
+                  {cv && <button className="btn btn-gold btn-xs" onClick={runAtsAnalysis} disabled={atsAnalyzing}>
+                    {atsAnalyzing ? "⏳ Scoring..." : "🔍 Run ATS Check"}
+                  </button>}
+                  <span className={`tag ${Object.values(atsScores).some(v=>v>0) ? (Math.round(Object.values(atsScores).reduce((a,b)=>a+b)/4) >= 80 ? "t-green" : Math.round(Object.values(atsScores).reduce((a,b)=>a+b)/4) >= 60 ? "t-gold" : "t-red") : "t-ink"}`}>
+                    {Object.values(atsScores).some(v=>v>0) ? `${Math.round(Object.values(atsScores).reduce((a,b)=>a+b)/4)} / 100` : "—"}
+                  </span>
+                </div>
               </div>
-              {Object.entries({keyword:"Keyword Match",format:"Format Compliance",quant:"Quantification",length:"Length Optimization"}).map(([k,l])=>(
+              {!Object.values(atsScores).some(v=>v>0) && !atsAnalyzing && (
+                <div style={{textAlign:"center",padding:"20px 0",color:"var(--ink4)",fontSize:12}}>
+                  {cv ? "Click 'Run ATS Check' to analyze your CV" : "Upload a CV first to get ATS scoring"}
+                </div>
+              )}
+              {Object.values(atsScores).some(v=>v>0) && Object.entries({keyword:"Keyword Match",format:"Format Compliance",quant:"Quantification",length:"Length Optimization"}).map(([k,l])=>(
                 <div key={k} className="mb12">
                   <div className="flex j-between mb4">
                     <div className="fs12 t-ink3">{l}</div>
-                    <div className="mono fs11">{atsScores[k]}%</div>
+                    <div className="mono fs11" style={{color: atsScores[k]>=80?"var(--green)":atsScores[k]>=60?"var(--gold)":"var(--red)"}}>{atsScores[k]}%</div>
                   </div>
-                  <div className="prog-track"><div className="prog-fill g" style={{width:`${atsScores[k]}%`}}/></div>
+                  <div className="prog-track"><div className={`prog-fill ${atsScores[k]>=80?"g":atsScores[k]>=60?"":""}`} style={{width:`${atsScores[k]}%`, background: atsScores[k]>=80?"var(--green)":atsScores[k]>=60?"var(--gold)":"var(--red)"}}/></div>
                 </div>
               ))}
             </div>
             <div className="card">
               <div className="card-title mb16">AI Suggestions</div>
-              {(cv ? [
-                { type:"💡", text:"Use the 'AI Tailor CV' feature below to optimise for specific job descriptions" },
-                { type:"💡", text:"Quantify achievements where possible — numbers, percentages, and dollar amounts stand out" },
-                { type:"💡", text:"Ensure bullet points start with strong action verbs" },
-                { type:"💡", text:"Keep your CV to one page for undergraduate roles, two for experienced" },
+              {atsFeedback.length > 0 ? atsFeedback.map((s,i)=>(
+                <div key={i} style={{display:"flex",gap:10,padding:"9px 0",borderBottom:i<atsFeedback.length-1?"1px solid var(--border2)":"none",fontSize:12,lineHeight:1.6}}>
+                  <span style={{flexShrink:0}}>{s.type==="warning"?"⚠️":s.type==="good"?"✅":"💡"}</span>
+                  <span style={{color:"var(--ink2)"}}>{s.text}</span>
+                </div>
+              )) : (cv ? [
+                { type:"💡", text:"Run ATS Check to get personalized AI suggestions for your CV" },
+                { type:"💡", text:"Paste a job description to check keyword alignment" },
               ] : [
                 { type:"📄", text:"Upload your CV to get personalised AI suggestions" },
                 { type:"💡", text:"Use the upload button above or paste your CV text directly" },
               ]).map((s,i)=>(
-                <div key={i} style={{display:"flex",gap:10,padding:"9px 0",borderBottom:i<3?"1px solid var(--border2)":"none",fontSize:12,lineHeight:1.6}}>
+                <div key={i} style={{display:"flex",gap:10,padding:"9px 0",borderBottom:i<1?"1px solid var(--border2)":"none",fontSize:12,lineHeight:1.6}}>
                   <span style={{flexShrink:0}}>{s.type}</span>
                   <span style={{color:"var(--ink2)"}}>{s.text}</span>
                 </div>

@@ -65,6 +65,28 @@ function isExpired(title: string, desc: string, deadline: string): boolean {
   return d < today.getTime();
 }
 
+// Reject results that aren't actual job listings
+const NOT_A_JOB_TITLE = /\b(how to|what is|guide|tips|salary|blog|news|article|report|review|interview prep|would a|can i|should i|best way|top \d+|reddit|quora|\d+ things|education|training course)\b/i;
+const NOT_A_JOB_URL = /\.(pdf|xls|xlsx|doc|docx|ppt|pptx)(\?|$)/i;
+const NOT_A_JOB_DOMAIN = /(alumneye|argaamplus|s3\.amazonaws|blog\.|news\.|forum\.|wiki\.)/i;
+const JOB_SIGNALS_TITLE = /(analyst|associate|intern|manager|director|officer|summer|graduate|junior|senior|specialist|coordinator|program|opening|vacancy|hire|career|position|job)/i;
+const JOB_SIGNALS_DESC = /(apply|application|deadline|responsibilities|qualifications|requirements|salary|compensation|team|role|hiring|recruit|candidate|resume|cv|cover letter)/i;
+const JOB_BOARD_DOMAINS = /(linkedin|indeed|glassdoor|efinancialcareers|workday|greenhouse|lever\.co|smartrecruiters|myworkdayjobs|brightnetwork|targetjobs|gradcracker|prospects\.ac|milkround)/i;
+
+function isActualJobListing(title: string, desc: string, url: string): boolean {
+  // Always accept known job board URLs
+  if (JOB_BOARD_DOMAINS.test(url)) return true;
+  // Reject non-job domains
+  if (NOT_A_JOB_DOMAIN.test(url)) return false;
+  // Reject file downloads
+  if (NOT_A_JOB_URL.test(url)) return false;
+  // Reject question/article/guide titles
+  if (NOT_A_JOB_TITLE.test(title)) return false;
+  // Must have at least one job signal in title OR description
+  if (!JOB_SIGNALS_TITLE.test(title) && !JOB_SIGNALS_DESC.test(desc)) return false;
+  return true;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -146,6 +168,7 @@ Deno.serve(async (req) => {
           const title = cleanText(row.title || "Job Opening");
           const description = cleanText(row.description || "Live opening from web crawl");
           if (isExpired(title, description, "")) continue;
+          if (!isActualJobListing(title, description, url)) continue;
 
           let firm = "Company";
           try { firm = new URL(url).hostname.replace(/^www\./, "").split(".")[0].replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase()); } catch {}

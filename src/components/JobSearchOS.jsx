@@ -1298,7 +1298,7 @@ const NAV = [
   ]},
   { section: "Discover", items: [
     { id:"discover",  icon:"🔍", label:"Job Discovery", badge:"NEW", badgeGreen:true },
-    { id:"pipeline",  icon:"🗃", label:"CRM Pipeline" },
+    { id:"pipeline",  icon:"🗃", label:"CRM" },
   ]},
   { section: "Prepare", items: [
     { id:"playbooks",  icon:"📖", label:"Playbooks" },
@@ -2940,6 +2940,9 @@ function Pipeline({ jobs, setJobs }) {
   const jobFileRef = useRef(null);
   const [jobUploading, setJobUploading] = useState(false);
   const [jobUploadLog, setJobUploadLog] = useState("");
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addStage, setAddStage] = useState("saved");
+  const [newJob, setNewJob] = useState({ title:"", firm:"", stage:"saved", deadline:"", tags:"", track:"", location:"", url:"", source:"Manual" });
 
   // Load contacts from DB
   useEffect(() => {
@@ -3128,15 +3131,44 @@ ${textContent.slice(0, 6000)}`;
       <input type="file" ref={crmFileRef} style={{display:"none"}} accept=".csv,.xlsx,.xls,.pdf,.docx,.doc,.txt" onChange={handleCrmUpload}/>
       <input type="file" ref={jobFileRef} style={{display:"none"}} accept=".csv,.xlsx,.xls,.pdf,.docx,.doc,.txt" onChange={handleJobUpload}/>
       <div className="section-header">
-        <div><div className="eyebrow">CRM Pipeline</div><div className="section-title">Job Tracking Board</div></div>
+        <div><div className="eyebrow">CRM</div><div className="section-title">Job Tracking Board</div></div>
         <div className="flex g10">
           <button className="btn btn-outline btn-sm" onClick={()=>jobFileRef.current?.click()} disabled={jobUploading}>
             {jobUploading ? "⏳ Parsing..." : "📄 Import Jobs"}
           </button>
           <button className="btn btn-outline btn-sm" onClick={handleExportCSV}>⬇ Export CSV</button>
-          <button className="btn btn-primary btn-sm">+ Add Role</button>
+          <button className="btn btn-primary btn-sm" onClick={()=>{setShowAddForm(true);setAddStage("saved")}}>+ Add Role</button>
         </div>
       </div>
+
+      {showAddForm && (
+        <div className="card mb20">
+          <div className="card-header"><div className="card-title">Add Job Manually</div><button className="btn btn-ghost btn-sm" onClick={()=>setShowAddForm(false)}>✕</button></div>
+          <div className="grid g3 g16 mb16">
+            <div className="fg"><label className="label">Job Title *</label><input className="input" placeholder="e.g. Summer Analyst" value={newJob.title} onChange={e=>setNewJob(p=>({...p,title:e.target.value}))}/></div>
+            <div className="fg"><label className="label">Firm *</label><input className="input" placeholder="e.g. Goldman Sachs" value={newJob.firm} onChange={e=>setNewJob(p=>({...p,firm:e.target.value}))}/></div>
+            <div className="fg"><label className="label">Stage</label><select className="input" value={newJob.stage} onChange={e=>setNewJob(p=>({...p,stage:e.target.value}))}>{stages.map(s=><option key={s} value={s}>{labels[s]}</option>)}</select></div>
+          </div>
+          <div className="grid g3 g16 mb16">
+            <div className="fg"><label className="label">Deadline</label><input className="input" type="date" value={newJob.deadline} onChange={e=>setNewJob(p=>({...p,deadline:e.target.value}))}/></div>
+            <div className="fg"><label className="label">Location</label><input className="input" placeholder="e.g. London" value={newJob.location} onChange={e=>setNewJob(p=>({...p,location:e.target.value}))}/></div>
+            <div className="fg"><label className="label">Track</label><select className="input" value={newJob.track} onChange={e=>setNewJob(p=>({...p,track:e.target.value}))}><option value="">Select...</option><option value="ib">Investment Banking</option><option value="consulting">Consulting</option><option value="pe">Private Equity</option><option value="am">Asset Management</option><option value="product">Product</option><option value="other">Other</option></select></div>
+          </div>
+          <div className="grid g2 g16 mb16">
+            <div className="fg"><label className="label">Tags <span className="t-ink4 fs11">(comma-separated)</span></label><input className="input" placeholder="e.g. M&A, Summer 2026" value={newJob.tags} onChange={e=>setNewJob(p=>({...p,tags:e.target.value}))}/></div>
+            <div className="fg"><label className="label">Application URL</label><input className="input" placeholder="https://..." value={newJob.url} onChange={e=>setNewJob(p=>({...p,url:e.target.value}))}/></div>
+          </div>
+          <div className="flex g10">
+            <button className="btn btn-primary" disabled={!newJob.title.trim()||!newJob.firm.trim()} onClick={async()=>{
+              const tags = newJob.tags.split(",").map(t=>t.trim()).filter(Boolean);
+              const jobObj = { title:newJob.title, firm:newJob.firm, stage:newJob.stage, deadline:newJob.deadline||null, tags, track:newJob.track, location:newJob.location, url:newJob.url||null, source:"Manual", match:0 };
+              if(user){const{data}=await upsertJob(user.id,jobObj);if(data){setJobs(prev=>[{id:data.id,title:data.title,firm:data.firm,stage:data.stage,deadline:data.deadline||"",tags:data.tags||[],track:data.track||"",match:data.match_score||0,level:data.experience_level||"",location:data.location||"",url:data.url||"",source:data.source||"Manual"},...prev]);}}
+              setNewJob({title:"",firm:"",stage:"saved",deadline:"",tags:"",track:"",location:"",url:"",source:"Manual"});setShowAddForm(false);
+            }}>Add to CRM</button>
+            <button className="btn btn-outline" onClick={()=>setShowAddForm(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
 
       <div className="tabs mb20">
         {[{id:"pipeline",l:"Pipeline"},{id:"contacts",l:`Contacts (${contacts.length})`}].map(t=>(
@@ -3183,7 +3215,7 @@ ${textContent.slice(0, 6000)}`;
                   {stageJobs.length === 0 && (
                     <div style={{padding:"18px",textAlign:"center",color:"var(--ink4)",fontSize:11,border:"1.5px dashed var(--border2)",borderRadius:8}}>No roles yet</div>
                   )}
-                  <button className="btn btn-ghost btn-xs w-full" style={{justifyContent:"center",marginTop:8}}>+ Add</button>
+                  <button className="btn btn-ghost btn-xs w-full" style={{justifyContent:"center",marginTop:8}} onClick={()=>{setShowAddForm(true);setNewJob(p=>({...p,stage}))}}>+ Add</button>
                 </div>
               );
             })}
@@ -4451,7 +4483,7 @@ Format the output clearly with headers and bullet points. Make it specific to fi
 ══════════════════════════════════════════════════════════════════════════════ */
 const PAGE_TITLES = {
   dashboard:"Dashboard", discover:"Job Discovery", websites:"Website Manager",
-  pipeline:"CRM Pipeline", playbooks:"Playbooks",
+  pipeline:"CRM", playbooks:"Playbooks",
   cv:"CV + Cover Letters", interview:"Interview Prep",
   extension:"Auto Apply", admin:"Admin Console",
 };

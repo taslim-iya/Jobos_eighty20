@@ -2037,14 +2037,71 @@ You MUST respond by calling the score_ats function.`;
     setAtsAnalyzing(false);
   }, [cv, jobDesc]);
 
+  // Strip markdown artifacts from AI output
+  const cleanAIOutput = (text) => {
+    return text
+      .replace(/\*\*\*/g, '')           // ***
+      .replace(/\*\*/g, '')             // **
+      .replace(/(?<!\w)\*(?!\*)/g, '')  // stray single *
+      .replace(/^#+\s*/gm, '')          // markdown headers
+      .replace(/^---+$/gm, '')          // horizontal rules
+      .replace(/```[\s\S]*?```/g, '')   // code blocks
+      .replace(/`([^`]+)`/g, '$1')      // inline code
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // markdown links
+      .replace(/^\s*>\s*/gm, '')        // blockquotes
+      .replace(/\n{3,}/g, '\n\n')       // collapse excessive newlines
+      .trim();
+  };
+
+  // Save CV to profile in database
+  const saveCvToProfile = async (cvText) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      await supabase.from('profiles').update({ cv_text: cvText }).eq('user_id', user.id);
+    } catch (err) {
+      console.error("Failed to save CV to profile:", err);
+    }
+  };
+
+  // AI Auto-Fix CV function
+  const autoFixCV = async (rawCv) => {
+    if (!rawCv || rawCv.trim().length < 30) return rawCv;
+    try {
+      const result = await callClaude(
+        `Clean and fix the formatting of this CV. Rules:
+1. Do NOT add any markdown formatting (no **, ***, ##, ---, \`\`\`, etc.)
+2. Use plain text ONLY
+3. Use bullet points with • character only
+4. Keep section headers in plain uppercase text
+5. Preserve all original content — do not remove or fabricate information
+6. Fix alignment, spacing, and typos
+7. Improve bullet points with action verbs and quantified metrics where the data exists
+8. Ensure consistent date formatting (e.g., "Jan 2024 – Present")
+9. Remove any artifacts, garbled text, or extraction errors
+10. One blank line between sections, no excessive spacing
+
+CV:
+${rawCv}
+
+Return ONLY the cleaned CV text. No commentary, no markdown, no headers like "Here is your CV:".`,
+        "You are a professional CV formatter. Output ONLY plain text. Never use markdown syntax like **, ***, ##, or ---. Use • for bullets."
+      );
+      return cleanAIOutput(result);
+    } catch (err) {
+      console.error("AI auto-fix failed:", err);
+      return rawCv;
+    }
+  };
+
   const handleCVUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
     try {
+      let rawText = '';
       if (file.name.endsWith('.txt')) {
-        const text = await file.text();
-        setCv(text);
+        rawText = await file.text();
       } else {
         // For PDF/DOCX, send as base64 to the extraction edge function
         const arrayBuffer = await file.arrayBuffer();
@@ -2062,16 +2119,21 @@ You MUST respond by calling the score_ats function.`;
         if (error) throw new Error(error.message || 'Extraction failed');
         if (data?.error) throw new Error(data.error);
         if (data?.text) {
-          setCv(data.text);
+          rawText = data.text;
         } else {
           throw new Error('No text extracted from document');
         }
       }
+
+      // Auto-apply AI fix on upload
+      const fixedCv = await autoFixCV(rawText);
+      setCv(fixedCv);
+      // Save to profile
+      await saveCvToProfile(fixedCv);
     } catch (err) {
       console.error("CV upload failed:", err);
       alert("Failed to process CV file: " + (err.message || "Unknown error. Try a .txt file or paste directly."));
     }
-    setUploading(false);
     setUploading(false);
     if (cvFileRef.current) cvFileRef.current.value = "";
   };
@@ -2232,8 +2294,11 @@ Return the full tailored CV text only, no commentary.`;
       const isBullet = /^[-•□▪►▸●◦]\s*/.test(line);
       const dateMatch = line.match(/((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{4}.*$|\d{4}\s*[-–—]\s*(?:\d{4}|Present|Current))/i);
 
-      if (!nameDetected && i < 3 && !isBullet) {
-        if (lower.includes("@") || lower.startsWith("m:") || lower.startsWith("+") || /^\d/.test(lower)) {
+      // Detect contact/info lines more broadly (email, phone, linkedin, pipes separating info)
+      const isContactLine = lower.includes("@") || lower.startsWith("m:") || lower.startsWith("+") || /^\(?\d{3}\)?[\s.-]/.test(lower) || lower.includes("linkedin") || (line.includes("|") && i < 6) || (line.includes("·") && i < 6 && !isSectionHeader);
+
+      if (!nameDetected && i < 5 && !isBullet) {
+        if (isContactLine) {
           checkPage(5);
           pdf.setFont("times", "normal"); pdf.setFontSize(baseFontSize);
           pdf.text(line, 105, y, { align: "center" }); y += lineH + 0.5;
@@ -2254,7 +2319,7 @@ Return the full tailored CV text only, no commentary.`;
         continue;
       }
 
-      if (i < 6 && (lower.includes("@") || lower.startsWith("m:") || lower.startsWith("+"))) {
+      if (i < 8 && isContactLine) {
         checkPage(5);
         pdf.setFont("times", "normal"); pdf.setFontSize(baseFontSize);
         pdf.text(line, 105, y, { align: "center" }); y += lineH + 0.5;
@@ -2344,8 +2409,48 @@ Return the full tailored CV text only, no commentary.`;
           <button className="btn btn-outline btn-sm" onClick={() => {
             const content = tab === "cover letter" ? generatedCL : (tailoredCV || cv);
             if (!content) return;
-            const htmlBody = content.split("\n").map(l => `<p style="margin:2px 0;">${l || "&nbsp;"}</p>`).join("");
-            const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><style>body{font-family:'Times New Roman',Times,serif;font-size:11pt;line-height:1.15;color:#000;margin:36px 54px;}p{margin:2px 0;}</style></head><body>${htmlBody}</body></html>`;
+            const sectionHeaders = ["education","professional experience","extracurricular activities","additional information","work experience","experience","leadership","skills","interests","certifications","awards","contact details","projects","summary","objective"];
+            const lines = content.split("\n");
+            let htmlLines = [];
+            let nameFound = false;
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i].trim();
+              if (!line) { htmlLines.push('<p style="margin:0;font-size:4pt;">&nbsp;</p>'); continue; }
+              const lower = line.toLowerCase();
+              const isSectionHeader = sectionHeaders.some(x => lower === x || lower.startsWith(x + " "));
+              const isBullet = /^[-•□▪►▸●◦]\s*/.test(line);
+              const dateMatch = line.match(/((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{4}.*$|\d{4}\s*[-–—]\s*(?:\d{4}|Present|Current))/i);
+              
+              if (!nameFound && i < 3 && !isBullet) {
+                if (lower.includes("@") || lower.startsWith("m:") || lower.startsWith("+") || /^\d/.test(lower)) {
+                  htmlLines.push(`<p style="margin:0;text-align:center;font-size:10pt;color:#333;">${line}</p>`);
+                } else if (isSectionHeader) {
+                  nameFound = true;
+                  htmlLines.push(`<p style="margin:8pt 0 2pt 0;font-weight:bold;font-size:11pt;text-transform:uppercase;border-bottom:1px solid #000;padding-bottom:2pt;">${line.toUpperCase()}</p>`);
+                } else {
+                  nameFound = true;
+                  htmlLines.push(`<p style="margin:0;text-align:center;font-size:16pt;font-weight:bold;letter-spacing:1pt;">${line}</p>`);
+                }
+              } else if (isSectionHeader) {
+                htmlLines.push(`<p style="margin:8pt 0 2pt 0;font-weight:bold;font-size:11pt;text-transform:uppercase;border-bottom:1px solid #000;padding-bottom:2pt;">${line.toUpperCase()}</p>`);
+              } else if (isBullet) {
+                const bullet = line.replace(/^[-•□▪►▸●◦]\s*/, '');
+                htmlLines.push(`<p style="margin:1pt 0 1pt 18pt;text-indent:-12pt;font-size:10.5pt;line-height:1.3;">• ${bullet}</p>`);
+              } else if (dateMatch) {
+                const dateStr = dateMatch[0].trim();
+                const mainText = line.replace(dateStr, '').replace(/[,|·\s]+$/, '').trim();
+                if (mainText.length > 2) {
+                  htmlLines.push(`<p style="margin:3pt 0 0 0;font-size:10.5pt;"><b>${mainText}</b><span style="float:right;">${dateStr}</span></p>`);
+                } else {
+                  htmlLines.push(`<p style="margin:1pt 0;font-size:10.5pt;text-align:right;">${dateStr}</p>`);
+                }
+              } else if (line.length < 80 && !line.includes(".") && i > 3) {
+                htmlLines.push(`<p style="margin:2pt 0 0 0;font-size:10.5pt;font-style:italic;">${line}</p>`);
+              } else {
+                htmlLines.push(`<p style="margin:1pt 0;font-size:10.5pt;line-height:1.3;">${line}</p>`);
+              }
+            }
+            const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><style>@page{margin:54pt 54pt 54pt 54pt;}body{font-family:'Times New Roman',Times,serif;font-size:10.5pt;line-height:1.3;color:#000;}</style></head><body>${htmlLines.join("")}</body></html>`;
             const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -2396,11 +2501,9 @@ Return the full tailored CV text only, no commentary.`;
                   if (!cv.trim()) return;
                   setUploading(true);
                   try {
-                    const result = await callClaude(
-                      `Fix and improve this CV. Correct formatting issues, align sections properly, fix typos, improve bullet points with action verbs and metrics where possible. Keep the same content and structure but make it polished and professional for investment banking / consulting applications.\n\nCV:\n${cv}\n\nReturn ONLY the improved CV text, no commentary.`,
-                      "You are a professional CV editor. Return only the cleaned-up CV text."
-                    );
-                    setCv(result);
+                    const fixed = await autoFixCV(cv);
+                    setCv(fixed);
+                    await saveCvToProfile(fixed);
                   } catch (err) {
                     alert("AI fix failed: " + (err.message || "Unknown error"));
                   }

@@ -132,6 +132,8 @@ export async function upsertWebsite(userId, site) {
         last_scanned: site.last_scanned || site.lastScanned,
         jobs_found: site.jobs_found || site.jobsFound || 0,
         status: site.status,
+        keywords: site.keywords,
+        job_titles: site.job_titles,
       })
       .eq("id", site.id)
       .eq("user_id", userId)
@@ -150,6 +152,8 @@ export async function upsertWebsite(userId, site) {
       last_scanned: site.last_scanned || site.lastScanned || "Never",
       jobs_found: site.jobs_found || site.jobsFound || 0,
       status: site.status || "idle",
+      keywords: site.keywords || [],
+      job_titles: site.job_titles || [],
     })
     .select()
     .single();

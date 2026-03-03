@@ -229,7 +229,9 @@ export type Database = {
           created_at: string
           frequency: string | null
           id: string
+          job_titles: string[] | null
           jobs_found: number | null
+          keywords: string[] | null
           label: string | null
           last_scanned: string | null
           status: string | null
@@ -241,7 +243,9 @@ export type Database = {
           created_at?: string
           frequency?: string | null
           id?: string
+          job_titles?: string[] | null
           jobs_found?: number | null
+          keywords?: string[] | null
           label?: string | null
           last_scanned?: string | null
           status?: string | null
@@ -253,7 +257,9 @@ export type Database = {
           created_at?: string
           frequency?: string | null
           id?: string
+          job_titles?: string[] | null
           jobs_found?: number | null
+          keywords?: string[] | null
           label?: string | null
           last_scanned?: string | null
           status?: string | null

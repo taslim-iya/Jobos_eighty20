@@ -2200,94 +2200,84 @@ Return the full tailored CV text only, no commentary.`;
   const stepClass = (n) => n < clStep ? "step-done" : n === clStep ? "step-active" : "step-inactive";
 
   // ── Text-based PDF export (small file, crisp text, proper alignment) ──
-  // For CVs: always fits on one page by auto-scaling font sizes down if needed
+  // For CVs: always fits on one page by auto-scaling font sizes AND spacing
   // For cover letters: allows multi-page
   const exportPDF = (content, filename) => {
     if (!content) return;
     const isCV = !filename.includes("cover_letter");
 
-    const margin = { top: 20, left: 22, right: 22, bottom: 15 };
+    const margin = { top: 18, left: 20, right: 20, bottom: 12 };
     const pageW = 210 - margin.left - margin.right;
     const pageH = 297 - margin.top - margin.bottom;
 
     const lines = content.split("\n");
     const sectionHeaders = ["education","professional experience","extracurricular activities","additional information","work experience","experience","leadership","skills","interests","certifications","awards","contact details","projects","summary","objective"];
 
-    // Measure total height at a given base font size
-    const measureHeight = (basePt) => {
-      const bulletPt = basePt;
-      const headerPt = basePt + 1;
-      const namePt = basePt + 4;
-      const lineH = basePt * 0.38; // approximate mm per line at this pt size
-      const bulletLineH = bulletPt * 0.38;
+    // Measure total height at a given base font size and spacing scale
+    const measureHeight = (basePt, spacingScale = 1) => {
+      const lineH = basePt * 0.38 * spacingScale;
+      const bulletLineH = basePt * 0.38 * spacingScale;
+      const blankH = 1.2 * spacingScale;
+      const sectionGap = 1.5 * spacingScale;
+      const sectionAfter = 3 * spacingScale;
       let h = 0;
       let nameDetected = false;
 
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
-        if (!line) { h += 1.5; continue; }
+        if (!line) { h += blankH; continue; }
         const lower = line.toLowerCase();
         const isSectionHeader = sectionHeaders.some(x => lower === x || lower.startsWith(x + " "));
         const isBullet = /^[-•□▪►▸●◦]\s*/.test(line);
-        const dateMatch = line.match(/((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{4}.*$|\d{4}\s*[-–—]\s*(?:\d{4}|Present|Current))/i);
 
-        if (!nameDetected && i < 3 && !isBullet) {
-          if (lower.includes("@") || lower.startsWith("m:") || lower.startsWith("+") || /^\d/.test(lower)) {
-            h += lineH + 0.5;
-          } else if (isSectionHeader) {
-            nameDetected = true;
-            h += headerPt * 0.38 + 4;
-          } else {
-            h += namePt * 0.38 + 1;
-            nameDetected = true;
-          }
+        if (!nameDetected && i < 5 && !isBullet) {
+          const isContact = lower.includes("@") || lower.startsWith("m:") || lower.startsWith("+") || /^\(?\d{3}\)?[\s.-]/.test(lower) || lower.includes("linkedin") || (line.includes("|") && i < 6) || (line.includes("·") && i < 6 && !isSectionHeader);
+          if (isContact) { h += lineH + 0.3; }
+          else if (isSectionHeader) { nameDetected = true; h += sectionGap + (basePt + 1) * 0.38 + sectionAfter; }
+          else { h += (basePt + 4) * 0.38 + 0.5; nameDetected = true; }
           continue;
         }
-
-        if (i < 6 && (lower.includes("@") || lower.startsWith("m:") || lower.startsWith("+"))) {
-          h += lineH + 0.5;
-          continue;
+        if (i < 8 && (lower.includes("@") || lower.startsWith("m:") || lower.startsWith("+") || lower.includes("linkedin") || (line.includes("|") && i < 8))) {
+          h += lineH + 0.3; continue;
         }
-
-        if (isSectionHeader) {
-          h += 2 + headerPt * 0.38 + 4;
-          continue;
-        }
-
+        if (isSectionHeader) { h += sectionGap + (basePt + 1) * 0.38 + sectionAfter; continue; }
         if (isBullet) {
           const bullet = line.replace(/^[-•□▪►▸●◦]\s*/, "");
-          const estCharsPerLine = Math.floor((pageW - 8) / (bulletPt * 0.18));
+          const estCharsPerLine = Math.floor((pageW - 7) / (basePt * 0.18));
           const wrapLines = Math.max(1, Math.ceil(bullet.length / estCharsPerLine));
-          h += wrapLines * bulletLineH + 0.8;
+          h += wrapLines * bulletLineH + 0.4 * spacingScale;
           continue;
         }
-
-        if (dateMatch) {
-          h += lineH + 1;
-          continue;
-        }
-
-        if (line.length < 80 && !line.includes(".") && i > 3) {
-          h += lineH + 0.5;
-          continue;
-        }
-
+        const dateMatch = line.match(/((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{4}.*$|\d{4}\s*[-–—]\s*(?:\d{4}|Present|Current))/i);
+        if (dateMatch) { h += lineH + 0.6 * spacingScale; continue; }
+        if (line.length < 80 && !line.includes(".") && i > 3) { h += lineH + 0.3 * spacingScale; continue; }
         const estCharsPerLine = Math.floor(pageW / (basePt * 0.18));
         const wrapLines = Math.max(1, Math.ceil(line.length / estCharsPerLine));
-        h += wrapLines * lineH + 0.5;
+        h += wrapLines * lineH + 0.3 * spacingScale;
       }
       return h;
     };
 
-    // For CVs, find the largest font size (between 6pt and 10pt) that fits one page
+    // For CVs: find optimal font size + spacing to fill page without overflow
     let baseFontSize = 10;
+    let spacingScale = 1;
     if (isCV) {
-      for (let pt = 10; pt >= 6; pt -= 0.5) {
-        if (measureHeight(pt) <= pageH) {
-          baseFontSize = pt;
-          break;
-        }
+      // First find largest font that fits
+      for (let pt = 10.5; pt >= 7; pt -= 0.5) {
+        if (measureHeight(pt, 1) <= pageH) { baseFontSize = pt; break; }
         baseFontSize = pt;
+      }
+      // If there's too much dead space, expand spacing to fill page
+      const usedH = measureHeight(baseFontSize, 1);
+      if (usedH < pageH * 0.85 && usedH > 0) {
+        spacingScale = Math.min(1.6, pageH / usedH);
+      }
+      // If still overflowing, compress spacing
+      if (measureHeight(baseFontSize, spacingScale) > pageH) {
+        for (let s = spacingScale; s >= 0.7; s -= 0.05) {
+          if (measureHeight(baseFontSize, s) <= pageH) { spacingScale = s; break; }
+          spacingScale = s;
+        }
       }
     }
 
@@ -2295,38 +2285,40 @@ Return the full tailored CV text only, no commentary.`;
     let y = margin.top;
     let nameDetected = false;
 
-    const lineH = baseFontSize * 0.38;
+    const lineH = baseFontSize * 0.38 * spacingScale;
+    const blankH = 1.2 * spacingScale;
+    const sectionGap = 1.5 * spacingScale;
+    const sectionAfter = 3 * spacingScale;
     const addPage = () => { if (!isCV) { pdf.addPage(); y = margin.top; } };
     const checkPage = (needed) => { if (!isCV && y + needed > margin.top + pageH) addPage(); };
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
-      if (!line) { y += 1.5; continue; }
+      if (!line) { y += blankH; continue; }
       const lower = line.toLowerCase();
       const isSectionHeader = sectionHeaders.some(h => lower === h || lower.startsWith(h + " "));
       const isBullet = /^[-•□▪►▸●◦]\s*/.test(line);
       const dateMatch = line.match(/((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{4}.*$|\d{4}\s*[-–—]\s*(?:\d{4}|Present|Current))/i);
-
-      // Detect contact/info lines more broadly (email, phone, linkedin, pipes separating info)
-      const isContactLine = lower.includes("@") || lower.startsWith("m:") || lower.startsWith("+") || /^\(?\d{3}\)?[\s.-]/.test(lower) || lower.includes("linkedin") || (line.includes("|") && i < 6) || (line.includes("·") && i < 6 && !isSectionHeader);
+      const isContactLine = lower.includes("@") || lower.startsWith("m:") || lower.startsWith("+") || /^\(?\d{3}\)?[\s.-]/.test(lower) || lower.includes("linkedin") || (line.includes("|") && i < 8) || (line.includes("·") && i < 8 && !isSectionHeader);
 
       if (!nameDetected && i < 5 && !isBullet) {
         if (isContactLine) {
           checkPage(5);
           pdf.setFont("times", "normal"); pdf.setFontSize(baseFontSize);
-          pdf.text(line, 105, y, { align: "center" }); y += lineH + 0.5;
+          pdf.text(line, 105, y, { align: "center" }); y += lineH + 0.3;
         } else if (isSectionHeader) {
           nameDetected = true;
           checkPage(8);
+          y += sectionGap;
           pdf.setFont("times", "bold"); pdf.setFontSize(baseFontSize + 1);
           pdf.text(line.toUpperCase(), margin.left, y);
           y += 1;
           pdf.setDrawColor(0); pdf.setLineWidth(0.3);
           pdf.line(margin.left, y, margin.left + pageW, y);
-          y += 4;
+          y += sectionAfter;
         } else {
           pdf.setFont("times", "bold"); pdf.setFontSize(baseFontSize + 4);
-          pdf.text(line, 105, y, { align: "center" }); y += (baseFontSize + 4) * 0.38 + 1;
+          pdf.text(line, 105, y, { align: "center" }); y += (baseFontSize + 4) * 0.38 + 0.5;
           nameDetected = true;
         }
         continue;
@@ -2335,30 +2327,30 @@ Return the full tailored CV text only, no commentary.`;
       if (i < 8 && isContactLine) {
         checkPage(5);
         pdf.setFont("times", "normal"); pdf.setFontSize(baseFontSize);
-        pdf.text(line, 105, y, { align: "center" }); y += lineH + 0.5;
+        pdf.text(line, 105, y, { align: "center" }); y += lineH + 0.3;
         continue;
       }
 
       if (isSectionHeader) {
         checkPage(10);
-        y += 2;
+        y += sectionGap;
         pdf.setFont("times", "bold"); pdf.setFontSize(baseFontSize + 1);
         pdf.text(line.toUpperCase(), margin.left, y);
         y += 1;
         pdf.setDrawColor(0); pdf.setLineWidth(0.3);
         pdf.line(margin.left, y, margin.left + pageW, y);
-        y += 4;
+        y += sectionAfter;
         continue;
       }
 
       if (isBullet) {
         const bullet = line.replace(/^[-•□▪►▸●◦]\s*/, "");
         pdf.setFont("times", "normal"); pdf.setFontSize(baseFontSize);
-        const wrapped = pdf.splitTextToSize(bullet, pageW - 8);
-        checkPage(wrapped.length * lineH + 0.8);
-        pdf.text("▪", margin.left + 3, y);
-        pdf.text(wrapped, margin.left + 8, y);
-        y += wrapped.length * lineH + 0.8;
+        const wrapped = pdf.splitTextToSize(bullet, pageW - 7);
+        checkPage(wrapped.length * lineH + 0.4);
+        pdf.text("•", margin.left + 3, y);
+        pdf.text(wrapped, margin.left + 7, y);
+        y += wrapped.length * lineH + 0.4 * spacingScale;
         continue;
       }
 
@@ -2375,7 +2367,7 @@ Return the full tailored CV text only, no commentary.`;
           pdf.setFont("times", "normal"); pdf.setFontSize(baseFontSize);
           pdf.text(dateStr, margin.left + pageW, y, { align: "right" });
         }
-        y += lineH + 1;
+        y += lineH + 0.6 * spacingScale;
         continue;
       }
 
@@ -2384,15 +2376,15 @@ Return the full tailored CV text only, no commentary.`;
         pdf.setFont("times", "bolditalic"); pdf.setFontSize(baseFontSize);
         const wrapped = pdf.splitTextToSize(line, pageW);
         pdf.text(wrapped, margin.left, y);
-        y += wrapped.length * lineH + 0.5;
+        y += wrapped.length * lineH + 0.3 * spacingScale;
         continue;
       }
 
       pdf.setFont("times", "normal"); pdf.setFontSize(baseFontSize);
       const wrapped = pdf.splitTextToSize(line, pageW);
-      checkPage(wrapped.length * lineH + 0.5);
+      checkPage(wrapped.length * lineH + 0.3);
       pdf.text(wrapped, margin.left, y);
-      y += wrapped.length * lineH + 0.5;
+      y += wrapped.length * lineH + 0.3 * spacingScale;
     }
 
     // For CVs, remove any extra pages that shouldn't exist
@@ -2422,48 +2414,63 @@ Return the full tailored CV text only, no commentary.`;
           <button className="btn btn-outline btn-sm" onClick={() => {
             const content = tab === "cover letter" ? generatedCL : (tailoredCV || cv);
             if (!content) return;
+            const isCV = tab !== "cover letter";
             const sectionHeaders = ["education","professional experience","extracurricular activities","additional information","work experience","experience","leadership","skills","interests","certifications","awards","contact details","projects","summary","objective"];
             const lines = content.split("\n");
+            // Estimate content density to scale font size for one-page fit
+            const totalLines = lines.length;
+            const bulletCount = lines.filter(l => /^[-•□▪►▸●◦]\s*/.test(l.trim())).length;
+            const contentDensity = totalLines + bulletCount * 0.5;
+            // Scale font: dense CVs get smaller text, sparse ones get larger
+            let fontSize = isCV ? (contentDensity > 80 ? "9pt" : contentDensity > 60 ? "9.5pt" : contentDensity > 40 ? "10pt" : "10.5pt") : "11pt";
+            let lineHeight = isCV ? (contentDensity > 60 ? "1.15" : "1.25") : "1.4";
+            let sectionMargin = isCV ? (contentDensity > 60 ? "4pt 0 1pt 0" : "6pt 0 2pt 0") : "10pt 0 3pt 0";
+            let blankLineSize = isCV ? (contentDensity > 60 ? "2pt" : "3pt") : "6pt";
+
             let htmlLines = [];
             let nameFound = false;
             for (let i = 0; i < lines.length; i++) {
               const line = lines[i].trim();
-              if (!line) { htmlLines.push('<p style="margin:0;font-size:4pt;">&nbsp;</p>'); continue; }
+              if (!line) { htmlLines.push(`<p style="margin:0;font-size:${blankLineSize};">&nbsp;</p>`); continue; }
               const lower = line.toLowerCase();
               const isSectionHeader = sectionHeaders.some(x => lower === x || lower.startsWith(x + " "));
               const isBullet = /^[-•□▪►▸●◦]\s*/.test(line);
               const dateMatch = line.match(/((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{4}.*$|\d{4}\s*[-–—]\s*(?:\d{4}|Present|Current))/i);
+              const isContactLine = lower.includes("@") || lower.startsWith("m:") || lower.startsWith("+") || /^\(?\d{3}\)?[\s.-]/.test(lower) || lower.includes("linkedin") || (line.includes("|") && i < 6) || (line.includes("·") && i < 6 && !isSectionHeader);
               
-              if (!nameFound && i < 3 && !isBullet) {
-                if (lower.includes("@") || lower.startsWith("m:") || lower.startsWith("+") || /^\d/.test(lower)) {
-                  htmlLines.push(`<p style="margin:0;text-align:center;font-size:10pt;color:#333;">${line}</p>`);
+              if (!nameFound && i < 5 && !isBullet) {
+                if (isContactLine) {
+                  htmlLines.push(`<p style="margin:0;text-align:center;font-size:${fontSize};color:#333;">${line}</p>`);
                 } else if (isSectionHeader) {
                   nameFound = true;
-                  htmlLines.push(`<p style="margin:8pt 0 2pt 0;font-weight:bold;font-size:11pt;text-transform:uppercase;border-bottom:1px solid #000;padding-bottom:2pt;">${line.toUpperCase()}</p>`);
+                  htmlLines.push(`<p style="margin:${sectionMargin};font-weight:bold;font-size:${fontSize};text-transform:uppercase;border-bottom:1px solid #000;padding-bottom:1pt;">${line.toUpperCase()}</p>`);
                 } else {
                   nameFound = true;
-                  htmlLines.push(`<p style="margin:0;text-align:center;font-size:16pt;font-weight:bold;letter-spacing:1pt;">${line}</p>`);
+                  htmlLines.push(`<p style="margin:0 0 2pt 0;text-align:center;font-size:14pt;font-weight:bold;letter-spacing:1pt;">${line}</p>`);
                 }
+              } else if (i < 8 && isContactLine) {
+                htmlLines.push(`<p style="margin:0;text-align:center;font-size:${fontSize};color:#333;">${line}</p>`);
               } else if (isSectionHeader) {
-                htmlLines.push(`<p style="margin:8pt 0 2pt 0;font-weight:bold;font-size:11pt;text-transform:uppercase;border-bottom:1px solid #000;padding-bottom:2pt;">${line.toUpperCase()}</p>`);
+                htmlLines.push(`<p style="margin:${sectionMargin};font-weight:bold;font-size:${fontSize};text-transform:uppercase;border-bottom:1px solid #000;padding-bottom:1pt;">${line.toUpperCase()}</p>`);
               } else if (isBullet) {
                 const bullet = line.replace(/^[-•□▪►▸●◦]\s*/, '');
-                htmlLines.push(`<p style="margin:1pt 0 1pt 18pt;text-indent:-12pt;font-size:10.5pt;line-height:1.3;">• ${bullet}</p>`);
+                htmlLines.push(`<p style="margin:0.5pt 0 0.5pt 16pt;text-indent:-10pt;font-size:${fontSize};line-height:${lineHeight};">• ${bullet}</p>`);
               } else if (dateMatch) {
                 const dateStr = dateMatch[0].trim();
                 const mainText = line.replace(dateStr, '').replace(/[,|·\s]+$/, '').trim();
                 if (mainText.length > 2) {
-                  htmlLines.push(`<p style="margin:3pt 0 0 0;font-size:10.5pt;"><b>${mainText}</b><span style="float:right;">${dateStr}</span></p>`);
+                  htmlLines.push(`<p style="margin:2pt 0 0 0;font-size:${fontSize};"><b>${mainText}</b><span style="float:right;">${dateStr}</span></p>`);
                 } else {
-                  htmlLines.push(`<p style="margin:1pt 0;font-size:10.5pt;text-align:right;">${dateStr}</p>`);
+                  htmlLines.push(`<p style="margin:0.5pt 0;font-size:${fontSize};text-align:right;">${dateStr}</p>`);
                 }
               } else if (line.length < 80 && !line.includes(".") && i > 3) {
-                htmlLines.push(`<p style="margin:2pt 0 0 0;font-size:10.5pt;font-style:italic;">${line}</p>`);
+                htmlLines.push(`<p style="margin:1pt 0 0 0;font-size:${fontSize};font-style:italic;">${line}</p>`);
               } else {
-                htmlLines.push(`<p style="margin:1pt 0;font-size:10.5pt;line-height:1.3;">${line}</p>`);
+                htmlLines.push(`<p style="margin:0.5pt 0;font-size:${fontSize};line-height:${lineHeight};">${line}</p>`);
               }
             }
-            const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><style>@page{margin:54pt 54pt 54pt 54pt;}body{font-family:'Times New Roman',Times,serif;font-size:10.5pt;line-height:1.3;color:#000;}</style></head><body>${htmlLines.join("")}</body></html>`;
+            const pageMargin = isCV ? "36pt 48pt 36pt 48pt" : "54pt 54pt 54pt 54pt";
+            const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><style>@page{margin:${pageMargin};mso-page-orientation:portrait;}body{font-family:'Times New Roman',Times,serif;font-size:${fontSize};line-height:${lineHeight};color:#000;}</style></head><body>${htmlLines.join("")}</body></html>`;
             const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');

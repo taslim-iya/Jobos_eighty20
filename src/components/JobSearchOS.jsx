@@ -1302,13 +1302,13 @@ const NAV = [
   ]},
   { section: "Prepare", items: [
     { id:"playbooks",  icon:"📖", label:"Playbooks" },
-    { id:"documents",  icon:"🗂",  label:"Doc Intelligence" },
     { id:"cv",         icon:"📄", label:"CV + Cover Letters" },
-    { id:"outreach",   icon:"✉️",  label:"Outreach Engine" },
   ]},
   { section: "Practice", items: [
     { id:"interview",  icon:"🎙", label:"Interview Prep" },
-    { id:"extension",  icon:"🔌", label:"Chrome Extension" },
+  ]},
+  { section: "Apply", items: [
+    { id:"extension",  icon:"🚀", label:"Auto Apply" },
   ]},
   { section: "Admin", items: [
     { id:"admin", icon:"⚙️", label:"Admin Console" },
@@ -4451,9 +4451,9 @@ Format the output clearly with headers and bullet points. Make it specific to fi
 ══════════════════════════════════════════════════════════════════════════════ */
 const PAGE_TITLES = {
   dashboard:"Dashboard", discover:"Job Discovery", websites:"Website Manager",
-  pipeline:"CRM Pipeline", playbooks:"Playbooks", documents:"Document Intelligence",
-  cv:"CV + Cover Letters", outreach:"Outreach Engine", interview:"Interview Prep",
-  extension:"Chrome Extension", admin:"Admin Console",
+  pipeline:"CRM Pipeline", playbooks:"Playbooks",
+  cv:"CV + Cover Letters", interview:"Interview Prep",
+  extension:"Auto Apply", admin:"Admin Console",
 };
 
 export default function JobSearchOS() {
@@ -4518,9 +4518,7 @@ export default function JobSearchOS() {
       case "websites":   return <WebsiteManager/>;
       case "pipeline":   return <Pipeline jobs={jobs} setJobs={setJobsWithDb}/>;
       case "playbooks":  return <Playbooks/>;
-      case "documents":  return <Documents/>;
       case "cv":         return <CVStudio jobs={jobs}/>;
-      case "outreach":   return <Outreach/>;
       case "interview":  return <Interview/>;
       case "extension":  return <Extension/>;
       case "admin":      return <Admin/>;

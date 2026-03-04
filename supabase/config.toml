@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.admin-scrape]
 verify_jwt = false
+
+[functions.crawl-and-match]
+verify_jwt = false

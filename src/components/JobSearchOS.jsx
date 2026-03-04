@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { fetchJobs, upsertJob, deleteJob, fetchDocuments, upsertDocument, deleteDocument, uploadFile, deleteFile, exportToCSV, exportToText, fetchWebsites, upsertWebsite, deleteWebsite, fetchContacts, upsertContact } from "@/lib/database";
+import { fetchJobs, upsertJob, deleteJob, fetchDocuments, upsertDocument, deleteDocument, uploadFile, deleteFile, exportToCSV, exportToText, fetchWebsites, upsertWebsite, deleteWebsite, fetchContacts, upsertContact, fetchSources, upsertSource, deleteSource, fetchAdminTemplates, upsertAdminTemplate, deleteAdminTemplate, fetchAdminRules, upsertAdminRule, fetchUploads, insertUpload, fetchProfileMatches, updateMatchStatus, fetchCrawlRuns } from "@/lib/database";
 import { supabase } from "@/integrations/supabase/client";
 import { jsPDF } from "jspdf";
 // html2canvas removed — using jsPDF native text rendering for small file sizes
@@ -1295,9 +1295,11 @@ function dedupeJobsByUrl(jobs = []) {
 const NAV = [
   { section: "Home", items: [
     { id:"dashboard", icon:"⚡", label:"Dashboard" },
+    { id:"recommended", icon:"🎯", label:"Recommended", badge:"NEW", badgeGreen:true },
   ]},
   { section: "Discover", items: [
-    { id:"discover",  icon:"🔍", label:"Job Discovery", badge:"NEW", badgeGreen:true },
+    { id:"discover",  icon:"🔍", label:"Job Discovery" },
+    { id:"explore",   icon:"🌍", label:"Explore Jobs" },
     { id:"pipeline",  icon:"🗃", label:"CRM" },
   ]},
   { section: "Prepare", items: [
@@ -4077,10 +4079,39 @@ function Extension() {
 ══════════════════════════════════════════════════════════════════════════════ */
 function Admin() {
   const { user } = useAuth();
-  const [adminTab, setAdminTab] = useState("scrape");
+  const [adminTab, setAdminTab] = useState("sources");
   const [isAdmin, setIsAdmin] = useState(false);
   const [scrapeRunning, setScrapeRunning] = useState(false);
   const [scrapeResult, setScrapeResult] = useState(null);
+
+  // Sources state
+  const [sources, setSources] = useState([]);
+  const [showAddSource, setShowAddSource] = useState(false);
+  const [newSource, setNewSource] = useState({ name: "", base_url: "", crawl_type: "list", allowlist_paths: "", frequency_minutes: 10080, notes: "", enabled: true });
+
+  // Templates state
+  const [templates, setTemplates] = useState([]);
+  const [showAddTemplate, setShowAddTemplate] = useState(false);
+  const [newTemplate, setNewTemplate] = useState({ name: "", type: "cv", track: "", seniority: "", content: "", active: true, version: 1 });
+
+  // Rules state
+  const [rules, setRules] = useState([]);
+  const [editingRule, setEditingRule] = useState(null);
+  const [ruleJson, setRuleJson] = useState("");
+
+  // Uploads state
+  const [adminUploads, setAdminUploads] = useState([]);
+  const adminFileRef = useRef(null);
+  const [processing, setProcessing] = useState(false);
+
+  // Crawl runs state
+  const [crawlRuns, setCrawlRuns] = useState([]);
+
+  // All jobs state
+  const [allJobs, setAllJobs] = useState([]);
+  const [loadingJobs, setLoadingJobs] = useState(false);
+  const [jobsPage, setJobsPage] = useState(0);
+  const JOBS_PER_PAGE = 20;
 
   useEffect(() => {
     if (!user) return;
@@ -4088,161 +4119,127 @@ function Admin() {
       .then(({ data }) => setIsAdmin(!!data));
   }, [user]);
 
-  const runAdminScrape = async () => {
-    setScrapeRunning(true);
-    setScrapeResult(null);
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData?.session?.access_token;
-      if (!accessToken) throw new Error("No active session. Please sign in again.");
-
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-scrape`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-        },
-        body: JSON.stringify({}),
-      });
-
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload?.error || payload?.message || `Scrape failed (${response.status})`);
-      }
-
-      setScrapeResult(payload);
-    } catch (err) {
-      setScrapeResult({ error: err.message || "Scrape failed" });
-    }
-    setScrapeRunning(false);
-  };
-  const [uploadingTo, setUploadingTo] = useState(null);
-  const [uploadResult, setUploadResult] = useState(null);
-  const [processing, setProcessing] = useState(false);
-  const adminFileRef = useRef(null);
-
-  const handleAdminUpload = async (e, targetArea) => {
-    const files = Array.from(e.target.files || []);
-    if (!files.length || !user) return;
-    setUploadingTo(targetArea);
-    setProcessing(true);
-    setUploadResult(null);
-    
-    for (const file of files) {
-      try {
-        // Upload to storage
-        const { data: uploadData, error } = await uploadFile(user.id, file);
-        if (error) { console.error("Upload error:", error); continue; }
-        
-        // Save to documents table
-        await upsertDocument(user.id, {
-          filename: file.name, file_type: file.name.split('.').pop(),
-          doc_category: targetArea, ai_status: "processing",
-          file_path: uploadData.path, file_size: file.size,
-        });
-        
-        // AI parse the file
-        const prompt = `You are processing a file called "${file.name}" uploaded to the "${targetArea}" section of a career prep admin console.
-Based on the file name and target area, generate structured content that would be appropriate:
-
-For "${targetArea}":
-${targetArea === "questions" ? "- Generate 5-8 interview questions with categories (Technical, Behavioral, Case) and difficulty levels (Core, Advanced)" :
-  targetArea === "milestones" ? "- Generate 4-6 milestone items with week ranges, titles, and descriptions for career preparation" :
-  targetArea === "templates" ? "- Generate 3-4 template outlines with titles, descriptions, and key sections" :
-  targetArea === "rubrics" ? "- Generate scoring rubrics with 4-5 dimensions, each with criteria and scoring levels" :
-  "- Generate organized, structured content appropriate for this section"}
-
-Format the output clearly with headers and bullet points. Make it specific to finance/consulting/product career tracks.`;
-        
-        const result = await callClaude(prompt);
-        setUploadResult({ area: targetArea, filename: file.name, content: result });
-      } catch (err) { 
-        console.error("Admin upload failed:", err);
-        setUploadResult({ area: targetArea, filename: file.name, content: "Failed to process file. Please try again." });
-      }
-    }
-    setProcessing(false);
-    setUploadingTo(null);
-    if (adminFileRef.current) adminFileRef.current.value = "";
-  };
-
-  // Manual job add state
-  const [showAddJob, setShowAddJob] = useState(false);
-  const [manualJob, setManualJob] = useState({ title: "", firm: "", location: "London", track: "ib", level: "undergrad", deadline: "Rolling", description: "", source: "Manual", url: "" });
-  const [addingJob, setAddingJob] = useState(false);
-
-  // All jobs list state
-  const [allJobs, setAllJobs] = useState([]);
-  const [loadingJobs, setLoadingJobs] = useState(false);
-  const [jobsPage, setJobsPage] = useState(0);
-  const JOBS_PER_PAGE = 20;
+  useEffect(() => {
+    if (!isAdmin) return;
+    fetchSources().then(({ data }) => setSources(data || []));
+    fetchAdminTemplates().then(({ data }) => setTemplates(data || []));
+    fetchAdminRules().then(({ data }) => setRules(data || []));
+    if (user) fetchUploads(user.id).then(({ data }) => setAdminUploads(data || []));
+    fetchCrawlRuns().then(({ data }) => setCrawlRuns(data || []));
+  }, [isAdmin, user]);
 
   const loadAllJobs = async () => {
     setLoadingJobs(true);
-    const { data } = await supabase.from("jobs").select("id, title, firm, stage, track, location, source, created_at, user_id, match_score, deadline, url").order("created_at", { ascending: false }).range(0, 200);
+    const { data } = await supabase.from("jobs").select("id, title, firm, stage, track, location, source, created_at, user_id, match_score, deadline, url, source_job_url").order("created_at", { ascending: false }).range(0, 200);
     setAllJobs(data || []);
     setLoadingJobs(false);
   };
 
   useEffect(() => {
-    if (adminTab === "scrape" && isAdmin && allJobs.length === 0) loadAllJobs();
+    if (adminTab === "jobs" && isAdmin && allJobs.length === 0) loadAllJobs();
   }, [adminTab, isAdmin]);
 
-  const addManualJob = async () => {
-    if (!manualJob.title || !manualJob.firm) return;
-    setAddingJob(true);
+  const runCrawlAndMatch = async (sourceId = null) => {
+    setScrapeRunning(true);
+    setScrapeResult(null);
     try {
-      // Get all profiles to insert for everyone (or specific track)
-      const { data: profiles } = await supabase.from("profiles").select("user_id, target_track");
-      const targetProfiles = profiles?.filter(p => (p.target_track || "ib") === manualJob.track) || [];
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      if (!accessToken) throw new Error("No active session.");
 
-      if (targetProfiles.length === 0) {
-        // If no matching profiles, insert for all users
-        const { data: allProfiles } = await supabase.from("profiles").select("user_id");
-        for (const p of (allProfiles || [])) {
-          await supabase.from("jobs").insert({
-            user_id: p.user_id, title: manualJob.title, firm: manualJob.firm, stage: "saved",
-            deadline: manualJob.deadline, match_score: 85, tags: manualJob.track === "ib" ? ["IB"] : manualJob.track === "consulting" ? ["Consulting"] : ["Product"],
-            track: manualJob.track, experience_level: manualJob.level, location: manualJob.location,
-            description: manualJob.description, source: manualJob.source || "Manual",
-          });
-        }
-      } else {
-        for (const p of targetProfiles) {
-          await supabase.from("jobs").insert({
-            user_id: p.user_id, title: manualJob.title, firm: manualJob.firm, stage: "saved",
-            deadline: manualJob.deadline, match_score: 85, tags: manualJob.track === "ib" ? ["IB"] : manualJob.track === "consulting" ? ["Consulting"] : ["Product"],
-            track: manualJob.track, experience_level: manualJob.level, location: manualJob.location,
-            description: manualJob.description, source: manualJob.source || "Manual",
-          });
-        }
-      }
-      setManualJob({ title: "", firm: "", location: "London", track: "ib", level: "undergrad", deadline: "Rolling", description: "", source: "Manual", url: "" });
-      setShowAddJob(false);
-      loadAllJobs();
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/crawl-and-match`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY },
+        body: JSON.stringify(sourceId ? { source_id: sourceId } : {}),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || `Failed (${response.status})`);
+      setScrapeResult(payload);
+      fetchCrawlRuns().then(({ data }) => setCrawlRuns(data || []));
     } catch (err) {
-      console.error("Manual add failed:", err);
+      setScrapeResult({ error: err.message });
     }
-    setAddingJob(false);
+    setScrapeRunning(false);
+  };
+
+  const addSource = async () => {
+    const paths = newSource.allowlist_paths.split(",").map(p => p.trim()).filter(Boolean);
+    const { data } = await upsertSource({ ...newSource, allowlist_paths: paths });
+    if (data) setSources(prev => [data, ...prev]);
+    setNewSource({ name: "", base_url: "", crawl_type: "list", allowlist_paths: "", frequency_minutes: 10080, notes: "", enabled: true });
+    setShowAddSource(false);
+  };
+
+  const addTemplate = async () => {
+    const { data } = await upsertAdminTemplate(newTemplate);
+    if (data) setTemplates(prev => [data, ...prev]);
+    setNewTemplate({ name: "", type: "cv", track: "", seniority: "", content: "", active: true, version: 1 });
+    setShowAddTemplate(false);
+  };
+
+  const saveRule = async (rule) => {
+    try {
+      const parsed = JSON.parse(ruleJson);
+      const { data } = await upsertAdminRule({ ...rule, json_rules: parsed });
+      if (data) setRules(prev => prev.map(r => r.id === data.id ? data : r));
+      setEditingRule(null);
+    } catch { alert("Invalid JSON"); }
+  };
+
+  const handleAdminFileUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length || !user) return;
+    setProcessing(true);
+    for (const file of files) {
+      try {
+        const { data: uploadData, error } = await uploadFile(user.id, file);
+        if (error) continue;
+
+        // Extract content for PDF/DOCX
+        let extractedJson = null;
+        if (["pdf", "docx", "doc"].includes(file.name.split(".").pop().toLowerCase())) {
+          const arrayBuffer = await file.arrayBuffer();
+          const bytes = new Uint8Array(arrayBuffer);
+          let binary = ""; for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+          const base64 = btoa(binary);
+          const { data: extData } = await supabase.functions.invoke("extract-document", { body: { base64, fileName: file.name, mimeType: file.type } });
+          if (extData?.text) extractedJson = { text: extData.text, extracted_at: new Date().toISOString() };
+        }
+
+        const { data: upload } = await insertUpload({
+          owner_type: "admin", owner_id: user.id,
+          file_path: uploadData.path, file_type: file.name.split(".").pop(),
+          extracted_json: extractedJson,
+        });
+        if (upload) setAdminUploads(prev => [upload, ...prev]);
+      } catch (err) { console.error("Upload failed:", err); }
+    }
+    setProcessing(false);
+    if (adminFileRef.current) adminFileRef.current.value = "";
   };
 
   const deleteAdminJob = async (jobId) => {
     await supabase.from("jobs").delete().eq("id", jobId);
     setAllJobs(prev => prev.filter(j => j.id !== jobId));
   };
+
   return (
     <div className="page">
-      <input type="file" ref={adminFileRef} style={{display:"none"}} multiple accept=".pdf,.docx,.doc,.txt,.csv,.xlsx,.png,.jpg" 
-        onChange={e => handleAdminUpload(e, adminTab)}/>
+      <input type="file" ref={adminFileRef} style={{display:"none"}} multiple accept=".pdf,.docx,.doc,.txt,.csv,.xlsx,.json" onChange={handleAdminFileUpload}/>
       <div className="section-header">
         <div><div className="eyebrow">Admin Console</div><div className="section-title">Platform Configuration</div></div>
         <span className="tag t-red">Owner Only</span>
       </div>
+      {!isAdmin && <div className="alert a-red mb16">🔒 Admin access required. Contact the platform owner.</div>}
       <div className="grid g16" style={{gridTemplateColumns:"200px 1fr"}}>
         <div className="card-flat" style={{height:"fit-content"}}>
           <div className="label mb10">Sections</div>
-          {[{id:"scrape",l:"🔄 Job Scraper"},{id:"playbooks",l:"📖 Playbooks"},{id:"templates",l:"📄 Templates"},{id:"questions",l:"🎙 Question Banks"},{id:"rubrics",l:"📊 Rubrics"},{id:"skills",l:"🧠 Skill Taxonomy"},{id:"prompts",l:"🤖 AI Prompts"},{id:"config",l:"⚙️ System Config"}].map(item=>(
+          {[
+            {id:"sources",l:"🌐 Sources"},{id:"crawl",l:"🔄 Crawl & Match"},
+            {id:"jobs",l:"📋 All Jobs"},{id:"templates",l:"📄 Templates"},
+            {id:"rules",l:"⚙️ Rules & Config"},{id:"uploads",l:"📁 Uploads"},
+            {id:"playbooks",l:"📖 Playbooks"},{id:"prompts",l:"🤖 AI Prompts"},
+          ].map(item=>(
             <div key={item.id} onClick={()=>setAdminTab(item.id)}
               style={{padding:"8px 12px",borderRadius:7,cursor:"pointer",fontSize:13,color:adminTab===item.id?"var(--navy2)":"var(--ink3)",background:adminTab===item.id?"var(--gold-bg)":"transparent",fontWeight:adminTab===item.id?600:400,marginBottom:2,transition:"all .12s"}}>
               {item.l}
@@ -4250,226 +4247,278 @@ Format the output clearly with headers and bullet points. Make it specific to fi
           ))}
         </div>
         <div>
-          {/* Upload banner for all sections */}
-          <div className="card-flat mb16" style={{background:"var(--gold-bg)",border:"1px solid rgba(184,132,63,0.25)"}}>
-            <div className="flex items-c j-between">
-              <div>
-                <div className="fw5 fs12" style={{color:"var(--gold)"}}>📁 Upload files to {adminTab}</div>
-                <div className="fs11" style={{color:"#7A5A1C"}}>Upload PDFs, DOCX, or text files. AI will parse and structure the content automatically.</div>
-              </div>
-              <button className="btn btn-gold btn-sm" onClick={()=>adminFileRef.current?.click()} disabled={processing}>
-                {processing ? "⏳ Processing..." : "⬆ Upload & Parse"}
-              </button>
-            </div>
-          </div>
-
-          {processing && <div className="ai-pulse mb16"><div className="dot-spin"/>Processing uploaded file with AI...</div>}
-
-          {uploadResult && (
-            <div className="card mb16">
-              <div className="card-header">
-                <div>
-                  <div className="card-title">✨ Parsed: {uploadResult.filename}</div>
-                  <div className="card-subtitle">Added to {uploadResult.area}</div>
-                </div>
-                <div className="flex g8">
-                  <button className="btn btn-outline btn-xs" onClick={()=>navigator.clipboard.writeText(uploadResult.content)}>📋 Copy</button>
-                  <button className="btn btn-outline btn-xs" onClick={()=>exportToText(uploadResult.content, `admin_${uploadResult.area}`)}>⬇ Export</button>
-                  <button className="btn btn-ghost btn-xs" onClick={()=>setUploadResult(null)}>✕ Close</button>
-                </div>
-              </div>
-              <div style={{fontSize:13,lineHeight:1.8,color:"var(--ink2)",whiteSpace:"pre-wrap",maxHeight:400,overflowY:"auto"}}>
-                {uploadResult.content.split('\n').map((line, i) => (
-                  <div key={i} style={{marginBottom:2}} dangerouslySetInnerHTML={{__html:line.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--ink)">$1</strong>')}}/>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {adminTab==="scrape" && (
+          {/* ─── SOURCES TAB ─── */}
+          {adminTab === "sources" && (
             <div>
-              {/* Scraper controls */}
               <div className="card mb16">
                 <div className="card-header">
-                  <div>
-                    <div className="card-title">🔄 Admin Job Scraper</div>
-                    <div className="card-subtitle">Crawl live jobs and populate all user pipelines based on their profiles</div>
-                  </div>
-                  <div className="flex g8">
-                    {isAdmin && (
-                      <>
-                        <button className="btn btn-outline" onClick={() => setShowAddJob(v => !v)}>+ Add Job Manually</button>
-                        <button className="btn btn-gold" onClick={runAdminScrape} disabled={scrapeRunning}>
-                          {scrapeRunning ? "⏳ Scraping..." : "🚀 Run Scrape Now"}
-                        </button>
-                      </>
-                    )}
-                  </div>
+                  <div><div className="card-title">🌐 Crawl Sources</div><div className="card-subtitle">Manage websites and career pages to crawl</div></div>
+                  <button className="btn btn-primary btn-sm" onClick={() => setShowAddSource(v => !v)}>+ Add Source</button>
                 </div>
-                {!isAdmin && <div className="alert a-red mb16">🔒 Admin access required to run scrapes.</div>}
-                {scrapeRunning && <div className="ai-pulse mb16"><div className="dot-spin"/>Crawling job boards and populating user pipelines...</div>}
+                {showAddSource && (
+                  <div style={{padding:"16px",background:"var(--surface2)",borderRadius:10,marginBottom:16}}>
+                    <div className="grid g3 g16 mb12">
+                      <div className="fg"><label className="label">Name *</label><input className="input" placeholder="e.g. Goldman Sachs Careers" value={newSource.name} onChange={e => setNewSource(p => ({...p, name: e.target.value}))}/></div>
+                      <div className="fg"><label className="label">Base URL *</label><input className="input" placeholder="https://careers.gs.com" value={newSource.base_url} onChange={e => setNewSource(p => ({...p, base_url: e.target.value}))}/></div>
+                      <div className="fg"><label className="label">Crawl Type</label>
+                        <select className="input" value={newSource.crawl_type} onChange={e => setNewSource(p => ({...p, crawl_type: e.target.value}))}>
+                          <option value="list">List (crawl pages)</option>
+                          <option value="sitemap">Sitemap (map + scrape)</option>
+                          <option value="single">Single Page</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="grid g2 g16 mb12">
+                      <div className="fg"><label className="label">Allowlist Paths (comma-separated)</label><input className="input" placeholder="/jobs, /careers, /openings" value={newSource.allowlist_paths} onChange={e => setNewSource(p => ({...p, allowlist_paths: e.target.value}))}/></div>
+                      <div className="fg"><label className="label">Frequency (minutes)</label><input className="input" type="number" value={newSource.frequency_minutes} onChange={e => setNewSource(p => ({...p, frequency_minutes: parseInt(e.target.value) || 10080}))}/></div>
+                    </div>
+                    <div className="fg mb12"><label className="label">Notes</label><input className="input" placeholder="Any notes about this source..." value={newSource.notes} onChange={e => setNewSource(p => ({...p, notes: e.target.value}))}/></div>
+                    <div className="flex g10">
+                      <button className="btn btn-primary" onClick={addSource} disabled={!newSource.name || !newSource.base_url}>Add Source</button>
+                      <button className="btn btn-outline" onClick={() => setShowAddSource(false)}>Cancel</button>
+                    </div>
+                  </div>
+                )}
+                <table className="table">
+                  <thead><tr><th>Name</th><th>URL</th><th>Type</th><th>Freq</th><th>Enabled</th><th>Actions</th></tr></thead>
+                  <tbody>
+                    {sources.map(s => (
+                      <tr key={s.id}>
+                        <td className="fw6" style={{color:"var(--ink)"}}>{s.name}</td>
+                        <td className="mono fs11"><a href={s.base_url} target="_blank" rel="noopener noreferrer" style={{color:"var(--blue)"}}>{s.base_url.slice(0,40)}</a></td>
+                        <td><span className="tag t-ink">{s.crawl_type}</span></td>
+                        <td className="mono fs11">{s.frequency_minutes}m</td>
+                        <td><span className={`tag t-${s.enabled ? "green" : "red"}`}>{s.enabled ? "On" : "Off"}</span></td>
+                        <td>
+                          <div className="flex g6">
+                            <button className="btn btn-gold btn-xs" onClick={() => runCrawlAndMatch(s.id)} disabled={scrapeRunning}>▶ Crawl</button>
+                            <button className="btn btn-ghost btn-xs" onClick={async () => { await deleteSource(s.id); setSources(prev => prev.filter(x => x.id !== s.id)); }} style={{color:"var(--red)"}}>✕</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {sources.length === 0 && <div style={{padding:24,textAlign:"center",color:"var(--ink4)",fontSize:12}}>No sources configured. Add a career page URL above.</div>}
+              </div>
+            </div>
+          )}
+
+          {/* ─── CRAWL & MATCH TAB ─── */}
+          {adminTab === "crawl" && (
+            <div>
+              <div className="card mb16">
+                <div className="card-header">
+                  <div><div className="card-title">🔄 Crawl & Match Engine</div><div className="card-subtitle">Run the ingestion pipeline across all enabled sources</div></div>
+                  <button className="btn btn-gold" onClick={() => runCrawlAndMatch()} disabled={scrapeRunning || !isAdmin}>
+                    {scrapeRunning ? "⏳ Running..." : "🚀 Run All Sources"}
+                  </button>
+                </div>
+                {scrapeRunning && <div className="ai-pulse mb16"><div className="dot-spin"/>Crawling sources, extracting jobs, and running match scoring...</div>}
                 {scrapeResult && !scrapeResult.error && (
-                  <div className="alert a-green mb16">✅ Scrape complete! Inserted <strong>{scrapeResult.inserted}</strong> new jobs across <strong>{scrapeResult.profiles}</strong> user profiles.</div>
+                  <div className="alert a-green mb16">✅ Pipeline complete! Crawled <strong>{scrapeResult.sources_crawled}</strong> sources, inserted <strong>{scrapeResult.jobs_inserted}</strong> jobs, created <strong>{scrapeResult.matches_created}</strong> profile matches.</div>
                 )}
                 {scrapeResult?.error && <div className="alert a-red mb16">⚠ {scrapeResult.error}</div>}
+                <div className="alert a-gold mb16">⚖️ Obeys robots.txt and site terms. Does not bypass login walls or scrape behind authentication. LinkedIn auth pages are skipped.</div>
               </div>
-
-              {/* Manual Add Form */}
-              {showAddJob && (
-                <div className="card mb16">
-                  <div className="card-header"><div className="card-title">➕ Add Job Manually</div><button className="btn btn-ghost btn-sm" onClick={() => setShowAddJob(false)}>✕</button></div>
-                  <div className="grid g3 g16 mb16">
-                    <div className="fg"><label className="label">Job Title *</label><input className="input" placeholder="e.g. Summer Analyst 2026" value={manualJob.title} onChange={e => setManualJob(prev => ({...prev, title: e.target.value}))}/></div>
-                    <div className="fg"><label className="label">Firm *</label><input className="input" placeholder="e.g. Goldman Sachs" value={manualJob.firm} onChange={e => setManualJob(prev => ({...prev, firm: e.target.value}))}/></div>
-                    <div className="fg"><label className="label">Location</label><input className="input" placeholder="e.g. London" value={manualJob.location} onChange={e => setManualJob(prev => ({...prev, location: e.target.value}))}/></div>
-                  </div>
-                  <div className="grid g3 g16 mb16">
-                    <div className="fg"><label className="label">Track</label>
-                      <select className="input" value={manualJob.track} onChange={e => setManualJob(prev => ({...prev, track: e.target.value}))}>
-                        <option value="ib">Investment Banking</option><option value="consulting">Consulting</option><option value="product">Product</option>
-                      </select>
-                    </div>
-                    <div className="fg"><label className="label">Level</label>
-                      <select className="input" value={manualJob.level} onChange={e => setManualJob(prev => ({...prev, level: e.target.value}))}>
-                        <option value="undergrad">Undergraduate</option><option value="experienced">Experienced</option>
-                      </select>
-                    </div>
-                    <div className="fg"><label className="label">Deadline</label><input className="input" placeholder="e.g. Apr 15 or Rolling" value={manualJob.deadline} onChange={e => setManualJob(prev => ({...prev, deadline: e.target.value}))}/></div>
-                  </div>
-                  <div className="grid g2 g16 mb16">
-                    <div className="fg"><label className="label">Source</label><input className="input" placeholder="e.g. LinkedIn, Company Website" value={manualJob.source} onChange={e => setManualJob(prev => ({...prev, source: e.target.value}))}/></div>
-                    <div className="fg"><label className="label">URL</label><input className="input" placeholder="https://..." value={manualJob.url} onChange={e => setManualJob(prev => ({...prev, url: e.target.value}))}/></div>
-                  </div>
-                  <div className="fg mb16"><label className="label">Description</label><textarea className="input" rows={3} placeholder="Brief role description..." value={manualJob.description} onChange={e => setManualJob(prev => ({...prev, description: e.target.value}))} style={{resize:"vertical"}}/></div>
-                  <div className="flex g10">
-                    <button className="btn btn-primary" onClick={addManualJob} disabled={addingJob || !manualJob.title || !manualJob.firm}>
-                      {addingJob ? "⏳ Adding..." : "✅ Add to All Matching Users"}
-                    </button>
-                    <button className="btn btn-outline" onClick={() => setShowAddJob(false)}>Cancel</button>
-                  </div>
-                </div>
-              )}
-
-              {/* All Scraped Jobs Table */}
               <div className="card">
+                <div className="card-header"><div className="card-title">Recent Crawl Runs</div></div>
+                <table className="table">
+                  <thead><tr><th>Source</th><th>Status</th><th>Pages</th><th>Started</th><th>Duration</th><th>Errors</th></tr></thead>
+                  <tbody>
+                    {crawlRuns.map(r => (
+                      <tr key={r.id}>
+                        <td className="fw6" style={{color:"var(--ink)"}}>{r.sources?.name || "—"}</td>
+                        <td><span className={`tag t-${r.status === "completed" ? "green" : r.status === "failed" ? "red" : "gold"}`}>{r.status}</span></td>
+                        <td className="mono fs11">{r.pages_crawled}</td>
+                        <td className="mono fs11">{new Date(r.started_at).toLocaleString()}</td>
+                        <td className="mono fs11">{r.ended_at ? Math.round((new Date(r.ended_at) - new Date(r.started_at)) / 1000) + "s" : "—"}</td>
+                        <td>{(r.errors || []).length > 0 ? <span className="tag t-red">{r.errors.length}</span> : <span className="t-ink4">—</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {crawlRuns.length === 0 && <div style={{padding:24,textAlign:"center",color:"var(--ink4)",fontSize:12}}>No crawl runs yet.</div>}
+              </div>
+            </div>
+          )}
+
+          {/* ─── ALL JOBS TAB ─── */}
+          {adminTab === "jobs" && (
+            <div className="card">
+              <div className="card-header">
+                <div><div className="card-title">📋 All Jobs in System</div><div className="card-subtitle">{allJobs.length} total</div></div>
+                <button className="btn btn-outline btn-sm" onClick={loadAllJobs} disabled={loadingJobs}>{loadingJobs ? "🔄" : "↻ Refresh"}</button>
+              </div>
+              {loadingJobs ? <div className="ai-pulse"><div className="dot-spin"/>Loading...</div> : (
+                <>
+                  <table className="table">
+                    <thead><tr><th>Title</th><th>Firm</th><th>Track</th><th>Source URL</th><th>Added</th><th>Actions</th></tr></thead>
+                    <tbody>
+                      {allJobs.slice(jobsPage * JOBS_PER_PAGE, (jobsPage + 1) * JOBS_PER_PAGE).map(j => (
+                        <tr key={j.id}>
+                          <td className="fw6" style={{color:"var(--ink)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                            {j.url ? <a href={j.url} target="_blank" rel="noopener noreferrer" style={{color:"var(--ink)",textDecoration:"underline"}}>{j.title}</a> : j.title}
+                          </td>
+                          <td>{j.firm}</td>
+                          <td><span className="tag t-navy">{j.track || "—"}</span></td>
+                          <td className="mono fs11" style={{maxWidth:160,overflow:"hidden",textOverflow:"ellipsis"}}>{j.source_job_url ? <a href={j.source_job_url} target="_blank" rel="noopener noreferrer" style={{color:"var(--blue)"}}>Link</a> : "—"}</td>
+                          <td className="mono fs11">{new Date(j.created_at).toLocaleDateString()}</td>
+                          <td><button className="btn btn-ghost btn-xs" onClick={() => deleteAdminJob(j.id)} style={{color:"var(--red)"}}>✕</button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {allJobs.length > JOBS_PER_PAGE && (
+                    <div className="flex items-c j-between" style={{padding:"12px 0"}}>
+                      <div className="fs11 t-ink4">Page {jobsPage + 1} of {Math.ceil(allJobs.length / JOBS_PER_PAGE)}</div>
+                      <div className="flex g8">
+                        <button className="btn btn-outline btn-xs" disabled={jobsPage === 0} onClick={() => setJobsPage(p => p - 1)}>← Prev</button>
+                        <button className="btn btn-outline btn-xs" disabled={(jobsPage + 1) * JOBS_PER_PAGE >= allJobs.length} onClick={() => setJobsPage(p => p + 1)}>Next →</button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ─── TEMPLATES TAB ─── */}
+          {adminTab === "templates" && (
+            <div>
+              <div className="card mb16">
                 <div className="card-header">
-                  <div>
-                    <div className="card-title">📋 All Scraped Jobs</div>
-                    <div className="card-subtitle">{allJobs.length} total jobs in database</div>
-                  </div>
-                  <div className="flex g8">
-                    <button className="btn btn-outline btn-sm" onClick={loadAllJobs} disabled={loadingJobs}>{loadingJobs ? "🔄" : "↻ Refresh"}</button>
-                  </div>
+                  <div><div className="card-title">📄 Admin Templates</div><div className="card-subtitle">CV, cover letter, outreach, and interview templates</div></div>
+                  <button className="btn btn-primary btn-sm" onClick={() => setShowAddTemplate(v => !v)}>+ Add Template</button>
                 </div>
-                {loadingJobs ? (
-                  <div className="ai-pulse"><div className="dot-spin"/>Loading jobs...</div>
-                ) : (
-                  <>
-                    <table className="table">
-                      <thead><tr><th>Title</th><th>Firm</th><th>Track</th><th>Location</th><th>Source</th><th>Stage</th><th>Added</th><th>Actions</th></tr></thead>
-                      <tbody>
-                        {allJobs.slice(jobsPage * JOBS_PER_PAGE, (jobsPage + 1) * JOBS_PER_PAGE).map(j => (
-                          <tr key={j.id}>
-                            <td className="fw6" style={{color:"var(--ink)", maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>
-                              {j.url ? <a href={j.url} target="_blank" rel="noopener noreferrer" style={{color:"var(--ink)",textDecoration:"underline"}}>{j.title}</a> : j.title}
-                            </td>
-                            <td>{j.firm}</td>
-                            <td><span className="tag t-navy">{j.track === "ib" ? "IB" : j.track === "consulting" ? "Consulting" : "Product"}</span></td>
-                            <td style={{fontSize:11, color:"var(--ink3)"}}>{j.location || "—"}</td>
-                            <td style={{fontSize:11, color:"var(--ink3)"}}>{j.source || "—"}</td>
-                            <td><span className={`tag t-${j.stage === "saved" ? "ink" : j.stage === "offer" ? "green" : "gold"}`}>{j.stage}</span></td>
-                            <td className="mono fs11">{new Date(j.created_at).toLocaleDateString()}</td>
-                            <td>
-                              <div className="flex g6">
-                                {j.url && <a href={j.url} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-xs" style={{textDecoration:"none"}}>🔗</a>}
-                                <button className="btn btn-ghost btn-xs" onClick={() => deleteAdminJob(j.id)} style={{color:"var(--red)"}}>✕</button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {allJobs.length > JOBS_PER_PAGE && (
-                      <div className="flex items-c j-between" style={{padding:"12px 0"}}>
-                        <div className="fs11 t-ink4">Showing {jobsPage * JOBS_PER_PAGE + 1}–{Math.min((jobsPage + 1) * JOBS_PER_PAGE, allJobs.length)} of {allJobs.length}</div>
-                        <div className="flex g8">
-                          <button className="btn btn-outline btn-xs" disabled={jobsPage === 0} onClick={() => setJobsPage(p => p - 1)}>← Prev</button>
-                          <button className="btn btn-outline btn-xs" disabled={(jobsPage + 1) * JOBS_PER_PAGE >= allJobs.length} onClick={() => setJobsPage(p => p + 1)}>Next →</button>
+                {showAddTemplate && (
+                  <div style={{padding:16,background:"var(--surface2)",borderRadius:10,marginBottom:16}}>
+                    <div className="grid g3 g16 mb12">
+                      <div className="fg"><label className="label">Name *</label><input className="input" placeholder="Template name" value={newTemplate.name} onChange={e => setNewTemplate(p => ({...p, name: e.target.value}))}/></div>
+                      <div className="fg"><label className="label">Type</label>
+                        <select className="input" value={newTemplate.type} onChange={e => setNewTemplate(p => ({...p, type: e.target.value}))}>
+                          <option value="cv">CV</option><option value="cover">Cover Letter</option><option value="outreach">Outreach</option><option value="interview">Interview</option>
+                        </select>
+                      </div>
+                      <div className="fg"><label className="label">Track</label>
+                        <select className="input" value={newTemplate.track} onChange={e => setNewTemplate(p => ({...p, track: e.target.value}))}>
+                          <option value="">All</option><option value="ib">IB</option><option value="consulting">Consulting</option><option value="product">Product</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="fg mb12"><label className="label">Content *</label><textarea className="input textarea" placeholder="Template content..." value={newTemplate.content} onChange={e => setNewTemplate(p => ({...p, content: e.target.value}))}/></div>
+                    <div className="flex g10">
+                      <button className="btn btn-primary" onClick={addTemplate} disabled={!newTemplate.name || !newTemplate.content}>Add Template</button>
+                      <button className="btn btn-outline" onClick={() => setShowAddTemplate(false)}>Cancel</button>
+                    </div>
+                  </div>
+                )}
+                <table className="table">
+                  <thead><tr><th>Name</th><th>Type</th><th>Track</th><th>Version</th><th>Active</th><th>Actions</th></tr></thead>
+                  <tbody>
+                    {templates.map(t => (
+                      <tr key={t.id}>
+                        <td className="fw6" style={{color:"var(--ink)"}}>{t.name}</td>
+                        <td><span className="tag t-blue">{t.type}</span></td>
+                        <td><span className="tag t-navy">{t.track || "All"}</span></td>
+                        <td className="mono fs11">v{t.version}</td>
+                        <td><span className={`tag t-${t.active ? "green" : "red"}`}>{t.active ? "Active" : "Inactive"}</span></td>
+                        <td><button className="btn btn-ghost btn-xs" onClick={async () => { await deleteAdminTemplate(t.id); setTemplates(prev => prev.filter(x => x.id !== t.id)); }} style={{color:"var(--red)"}}>✕</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {templates.length === 0 && <div style={{padding:24,textAlign:"center",color:"var(--ink4)",fontSize:12}}>No templates yet. Add one above or upload a file.</div>}
+              </div>
+            </div>
+          )}
+
+          {/* ─── RULES & CONFIG TAB ─── */}
+          {adminTab === "rules" && (
+            <div>
+              <div className="card mb16">
+                <div className="card-header">
+                  <div><div className="card-title">⚙️ Match Rules & Configuration</div><div className="card-subtitle">Configure match thresholds, keyword sets, seniority mappings</div></div>
+                </div>
+                {rules.map(rule => (
+                  <div key={rule.id} style={{padding:16,border:"1px solid var(--border2)",borderRadius:10,marginBottom:12}}>
+                    <div className="flex items-c j-between mb8">
+                      <div className="fw6 fs12" style={{color:"var(--ink)"}}>{rule.name}</div>
+                      <div className="flex g8">
+                        <span className={`tag t-${rule.active ? "green" : "red"}`}>{rule.active ? "Active" : "Inactive"}</span>
+                        <button className="btn btn-outline btn-xs" onClick={() => { setEditingRule(rule.id); setRuleJson(JSON.stringify(rule.json_rules, null, 2)); }}>Edit</button>
+                      </div>
+                    </div>
+                    {editingRule === rule.id ? (
+                      <div>
+                        <textarea className="input textarea" style={{minHeight:200,fontFamily:"JetBrains Mono,monospace",fontSize:11}} value={ruleJson} onChange={e => setRuleJson(e.target.value)}/>
+                        <div className="flex g10 mt8">
+                          <button className="btn btn-primary btn-sm" onClick={() => saveRule(rule)}>Save</button>
+                          <button className="btn btn-outline btn-sm" onClick={() => setEditingRule(null)}>Cancel</button>
                         </div>
                       </div>
+                    ) : (
+                      <pre style={{fontSize:11,color:"var(--ink3)",background:"var(--surface2)",padding:12,borderRadius:8,overflow:"auto",maxHeight:200}}>{JSON.stringify(rule.json_rules, null, 2)}</pre>
                     )}
-                  </>
-                )}
+                  </div>
+                ))}
+                {rules.length === 0 && <div style={{padding:24,textAlign:"center",color:"var(--ink4)",fontSize:12}}>No rules configured.</div>}
               </div>
             </div>
           )}
-          {adminTab==="playbooks" && (
+
+          {/* ─── UPLOADS TAB ─── */}
+          {adminTab === "uploads" && (
+            <div>
+              <div className="card mb16">
+                <div className="card-header">
+                  <div><div className="card-title">📁 Admin Uploads</div><div className="card-subtitle">Upload PDF/DOCX files as admin datasets with auto-extraction</div></div>
+                  <button className="btn btn-gold btn-sm" onClick={() => adminFileRef.current?.click()} disabled={processing}>
+                    {processing ? "⏳ Processing..." : "⬆ Upload Files"}
+                  </button>
+                </div>
+                {processing && <div className="ai-pulse mb16"><div className="dot-spin"/>Uploading and extracting content...</div>}
+                <table className="table">
+                  <thead><tr><th>File</th><th>Type</th><th>Extracted</th><th>Uploaded</th></tr></thead>
+                  <tbody>
+                    {adminUploads.map(u => (
+                      <tr key={u.id}>
+                        <td className="fw6" style={{color:"var(--ink)"}}>{u.file_path?.split("/").pop() || "—"}</td>
+                        <td><span className="tag t-ink">{u.file_type || "—"}</span></td>
+                        <td><span className={`tag t-${u.extracted_json ? "green" : "gold"}`}>{u.extracted_json ? "Yes" : "Pending"}</span></td>
+                        <td className="mono fs11">{new Date(u.created_at).toLocaleDateString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {adminUploads.length === 0 && <div style={{padding:24,textAlign:"center",color:"var(--ink4)",fontSize:12}}>No admin uploads yet.</div>}
+              </div>
+            </div>
+          )}
+
+          {/* ─── PLAYBOOKS & PROMPTS TABS (keep existing) ─── */}
+          {adminTab === "playbooks" && (
             <div className="card">
-              <div className="card-header"><div className="card-title">Manage Playbooks</div><button className="btn btn-primary btn-sm">+ New Playbook</button></div>
+              <div className="card-header"><div className="card-title">Manage Playbooks</div></div>
               <table className="table">
-                <thead><tr><th>Track</th><th>Level</th><th>Milestones</th><th>Questions</th><th>Last Updated</th><th>Actions</th></tr></thead>
+                <thead><tr><th>Track</th><th>Level</th><th>Milestones</th><th>Questions</th><th>Actions</th></tr></thead>
                 <tbody>
-                  {[{t:"IB",l:"Undergrad",m:6,q:50,d:"Feb 20"},{t:"IB",l:"Experienced",m:4,q:30,d:"Feb 20"},{t:"Consulting",l:"Undergrad",m:5,q:40,d:"Feb 18"},{t:"Product",l:"Undergrad",m:5,q:35,d:"Feb 15"}].map((p,i)=>(
-                    <tr key={i}>
-                      <td className="fw6" style={{color:"var(--ink)"}}>{p.t}</td>
-                      <td><span className="tag t-ink">{p.l}</span></td>
-                      <td className="mono fs11">{p.m}</td>
-                      <td className="mono fs11">{p.q}</td>
-                      <td className="mono fs11">{p.d}</td>
-                      <td><div className="flex g8"><button className="btn btn-outline btn-xs">Edit</button><button className="btn btn-ghost btn-xs">Clone</button></div></td>
-                    </tr>
+                  {[{t:"IB",l:"Undergrad",m:6,q:50},{t:"IB",l:"Experienced",m:4,q:30},{t:"Consulting",l:"Undergrad",m:5,q:40},{t:"Product",l:"Undergrad",m:5,q:35}].map((p,i)=>(
+                    <tr key={i}><td className="fw6">{p.t}</td><td><span className="tag t-ink">{p.l}</span></td><td className="mono fs11">{p.m}</td><td className="mono fs11">{p.q}</td><td><button className="btn btn-outline btn-xs">Edit</button></td></tr>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
-          {adminTab==="prompts" && (
+          {adminTab === "prompts" && (
             <div className="card">
-              <div className="card-header"><div className="card-title">AI Prompt Packs</div><button className="btn btn-primary btn-sm">+ New Pack</button></div>
-              {[{n:"CV Bullet Generator",m:"gemini-flash",t:2048,v:"v2.1"},{n:"Interview Scorer",m:"gemini-flash",t:4096,v:"v3.0"},{n:"Cover Letter Generator",m:"gemini-flash",t:3000,v:"v1.8"},{n:"Entity Extractor",m:"gemini-flash",t:8192,v:"v2.4"},{n:"Job Matcher",m:"gemini-flash",t:2000,v:"v1.0"}].map((p,i)=>(
-                <div key={i} style={{display:"flex",alignItems:"center",gap:14,padding:"13px 0",borderBottom:i<4?"1px solid var(--border2)":"none"}}>
-                  <div style={{flex:1}}>
-                    <div className="fw5 fs13" style={{color:"var(--ink)",marginBottom:5}}>{p.n}</div>
-                    <div className="flex g8"><span className="tag t-gold">{p.m}</span><span className="tag t-ink">{p.t} tokens</span><span className="tag t-green">{p.v}</span></div>
-                  </div>
-                  <button className="btn btn-outline btn-xs">Edit Prompt</button>
+              <div className="card-header"><div className="card-title">AI Prompt Packs</div></div>
+              {[{n:"CV Bullet Generator",m:"gemini-flash",v:"v2.1"},{n:"Interview Scorer",m:"gemini-flash",v:"v3.0"},{n:"Cover Letter Generator",m:"gemini-flash",v:"v1.8"},{n:"Job Matcher",m:"gemini-flash",v:"v1.0"}].map((p,i)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",gap:14,padding:"13px 0",borderBottom:i<3?"1px solid var(--border2)":"none"}}>
+                  <div style={{flex:1}}><div className="fw5 fs13" style={{color:"var(--ink)"}}>{p.n}</div><div className="flex g8 mt4"><span className="tag t-gold">{p.m}</span><span className="tag t-green">{p.v}</span></div></div>
+                  <button className="btn btn-outline btn-xs">Edit</button>
                 </div>
               ))}
-            </div>
-          )}
-          {adminTab==="questions" && (
-            <div className="card">
-              <div className="card-header"><div className="card-title">Question Banks</div><button className="btn btn-primary btn-sm" onClick={()=>adminFileRef.current?.click()}>⬆ Import Questions</button></div>
-              <div className="alert a-blue mb16">📁 Upload a file with questions to automatically parse and add them to the question bank.</div>
-              <table className="table">
-                <thead><tr><th>Question</th><th>Track</th><th>Category</th><th>Difficulty</th><th>Actions</th></tr></thead>
-                <tbody>
-                  {Object.entries(PLAYBOOKS).flatMap(([track, pb]) => 
-                    Object.values(pb).filter(v => v.questions).flatMap(v => (v.questions || []).map(q => ({ ...q, track })))
-                  ).slice(0, 10).map((q, i) => (
-                    <tr key={i}>
-                      <td style={{maxWidth:380,color:"var(--ink)"}}>{q.q}</td>
-                      <td><span className="tag t-navy">{q.track}</span></td>
-                      <td><span className="tag t-blue">{q.cat}</span></td>
-                      <td><span className={`tag t-${q.diff==="Advanced"?"gold":"green"}`}>{q.diff}</span></td>
-                      <td><div className="flex g8"><button className="btn btn-outline btn-xs">Edit</button><button className="btn btn-ghost btn-xs" style={{color:"var(--red)"}}>✕</button></div></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {!["playbooks","prompts","questions"].includes(adminTab) && (
-            <div className="card">
-              <div style={{padding:"40px 32px",textAlign:"center"}}>
-                <div style={{fontSize:32,marginBottom:14}}>🛠</div>
-                <div style={{fontFamily:"Cormorant Garamond,serif",fontSize:20,fontWeight:700,color:"var(--ink)",marginBottom:8}}>{adminTab.charAt(0).toUpperCase()+adminTab.slice(1)} Editor</div>
-                <div className="fs13 t-ink3 mb16" style={{maxWidth:360,margin:"0 auto",lineHeight:1.7}}>Upload files to populate this section, or manage content directly.</div>
-                <div className="flex g10" style={{justifyContent:"center"}}>
-                  <button className="btn btn-gold" onClick={()=>adminFileRef.current?.click()}>⬆ Upload & Parse Files</button>
-                  <button className="btn btn-outline">Open Editor</button>
-                </div>
-              </div>
             </div>
           )}
         </div>
@@ -4481,9 +4530,243 @@ Format the output clearly with headers and bullet points. Make it specific to fi
 /* ════════════════════════════════════════════════════════════════════════════
    ROOT APP
 ══════════════════════════════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════════════════════════
+   PAGE: RECOMMENDED JOBS
+══════════════════════════════════════════════════════════════════════════════ */
+function RecommendedJobs({ jobs, setJobs, profile }) {
+  const { user } = useAuth();
+  const [matches, setMatches] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [profileId, setProfileId] = useState(null);
+  const [pasteUrl, setPasteUrl] = useState("");
+  const [parsing, setParsing] = useState(false);
+  const [parseResult, setParseResult] = useState(null);
+
+  useEffect(() => {
+    if (!user) return;
+    // Get profile id first
+    supabase.from("profiles").select("id").eq("user_id", user.id).single().then(({ data }) => {
+      if (data) {
+        setProfileId(data.id);
+        fetchProfileMatches(data.id).then(({ data: m }) => {
+          setMatches(m || []);
+          setLoading(false);
+        });
+      } else {
+        setLoading(false);
+      }
+    });
+  }, [user]);
+
+  const handleStatusChange = async (matchId, status) => {
+    await updateMatchStatus(matchId, status);
+    setMatches(prev => prev.map(m => m.id === matchId ? { ...m, status } : m));
+  };
+
+  const handlePasteUrl = async () => {
+    if (!pasteUrl.trim()) return;
+    setParsing(true);
+    setParseResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("crawl-and-match", {
+        body: { paste_url: pasteUrl },
+      });
+      if (error) throw new Error(error.message);
+      setParseResult(data?.job || null);
+    } catch (err) {
+      setParseResult({ error: err.message });
+    }
+    setParsing(false);
+  };
+
+  const saveJob = async (job) => {
+    if (!user) return;
+    const { data } = await upsertJob(user.id, {
+      title: job.title, firm: job.company || job.firm, stage: "saved",
+      url: job.apply_url || job.source_job_url, description: job.description,
+      location: job.location, tags: job.tags || [], source: "Recommended",
+    });
+    if (data) setJobs(prev => [{ id: data.id, title: data.title, firm: data.firm, stage: data.stage, deadline: data.deadline || "", tags: data.tags || [], match: data.match_score || 0, track: data.track, level: data.experience_level, location: data.location, url: data.url, source: "Recommended" }, ...prev]);
+  };
+
+  return (
+    <div className="page">
+      <div className="section-header">
+        <div><div className="eyebrow">For You</div><div className="section-title">Recommended Jobs</div></div>
+      </div>
+
+      {/* Paste URL fallback */}
+      <div className="card-flat mb16">
+        <div className="flex items-c g12">
+          <span style={{fontSize:12,fontWeight:500,color:"var(--ink3)"}}>📎 Paste a job URL:</span>
+          <input className="input flex-1" placeholder="https://careers.example.com/job/..." value={pasteUrl} onChange={e => setPasteUrl(e.target.value)} onKeyDown={e => e.key === "Enter" && handlePasteUrl()} />
+          <button className="btn btn-primary btn-sm" onClick={handlePasteUrl} disabled={parsing}>
+            {parsing ? "⏳ Parsing..." : "Parse & Save"}
+          </button>
+        </div>
+      </div>
+      {parseResult && !parseResult.error && (
+        <div className="card mb16">
+          <div className="card-header"><div className="card-title">✨ Parsed Job</div></div>
+          <div className="fw6 fs12" style={{color:"var(--ink)"}}>{parseResult.title}</div>
+          <div className="fs11 t-ink3 mb8">{parseResult.company}</div>
+          {parseResult.description && <div className="fs12 t-ink3 mb12" style={{lineHeight:1.6,maxHeight:120,overflow:"hidden"}}>{parseResult.description.slice(0, 300)}...</div>}
+          <button className="btn btn-primary btn-sm" onClick={() => saveJob(parseResult)}>+ Save to CRM</button>
+        </div>
+      )}
+      {parseResult?.error && <div className="alert a-red mb16">⚠ {parseResult.error}</div>}
+
+      {loading ? (
+        <div className="ai-pulse"><div className="dot-spin"/>Loading recommendations...</div>
+      ) : matches.length === 0 ? (
+        <div className="card-tinted" style={{textAlign:"center",padding:"48px 24px"}}>
+          <div style={{fontSize:40,marginBottom:14}}>🎯</div>
+          <div style={{fontFamily:"Cormorant Garamond,serif",fontSize:20,fontWeight:700,color:"var(--ink)",marginBottom:8}}>No Recommendations Yet</div>
+          <div className="fs13 t-ink3" style={{maxWidth:400,margin:"0 auto",lineHeight:1.7}}>
+            Once the admin runs the job crawler, matching jobs will appear here based on your profile skills, location, track, and preferences.
+          </div>
+        </div>
+      ) : (
+        <div>
+          <div className="alert a-gold mb16">🎯 {matches.filter(m => m.status === "new").length} new matches based on your profile. Score threshold is configurable by admin.</div>
+          <div className="grid g-auto">
+            {matches.filter(m => m.status !== "dismissed").map(match => {
+              const job = match.jobs;
+              if (!job) return null;
+              return (
+                <div key={match.id} className={`job-card ${match.status === "saved" ? "saved" : ""}`}>
+                  <div className="jc-match">{match.match_score}%</div>
+                  <div className="jc-title">{job.title}</div>
+                  <div className="jc-firm">{job.firm} · {job.location || "Remote"}</div>
+                  <div className="jc-tags">
+                    {(job.tags || []).map(t => <span key={t} className="tag t-navy">{t}</span>)}
+                    {match.status === "new" && <span className="tag t-green">New</span>}
+                  </div>
+                  {/* Match reasons */}
+                  <div style={{marginBottom:10}}>
+                    {(match.match_reasons || []).map((r, i) => (
+                      <div key={i} className="mono fs11" style={{color:"var(--green)",marginBottom:2}}>✓ {r}</div>
+                    ))}
+                  </div>
+                  <div className="jc-foot">
+                    <div className="jc-source">{job.source || "Crawler"} · ⏰ {job.deadline || "Rolling"}</div>
+                    <div className="flex g8">
+                      {job.url && <a href={job.url} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-xs" style={{textDecoration:"none"}}>Apply →</a>}
+                      {match.status === "saved" ? (
+                        <span className="tag t-green">✓ Saved</span>
+                      ) : (
+                        <>
+                          <button className="btn btn-primary btn-xs" onClick={() => { saveJob(job); handleStatusChange(match.id, "saved"); }}>+ Save</button>
+                          <button className="btn btn-ghost btn-xs" onClick={() => handleStatusChange(match.id, "dismissed")} style={{color:"var(--red)"}}>✕</button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   PAGE: EXPLORE JOBS
+══════════════════════════════════════════════════════════════════════════════ */
+function ExploreJobs({ jobs, setJobs }) {
+  const { user } = useAuth();
+  const [allJobs, setAllJobs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState({ track: "", location: "", seniority: "", search: "" });
+
+  useEffect(() => {
+    // Fetch all system jobs (with source_id set, i.e., from crawler)
+    supabase.from("jobs").select("*").not("source_id", "is", null).order("created_at", { ascending: false }).limit(200)
+      .then(({ data }) => { setAllJobs(data || []); setLoading(false); });
+  }, []);
+
+  const filtered = allJobs.filter(j => {
+    if (filters.track && j.track !== filters.track) return false;
+    if (filters.location && !(j.location || "").toLowerCase().includes(filters.location.toLowerCase())) return false;
+    if (filters.seniority && j.experience_level !== filters.seniority) return false;
+    if (filters.search && !`${j.title} ${j.firm} ${j.description || ""}`.toLowerCase().includes(filters.search.toLowerCase())) return false;
+    return true;
+  });
+
+  const saveJob = async (job) => {
+    if (!user) return;
+    const { data } = await upsertJob(user.id, {
+      title: job.title, firm: job.firm, stage: "saved", url: job.url || job.apply_url,
+      description: job.description, location: job.location, tags: job.tags || [],
+      source: "Explore", track: job.track, level: job.experience_level,
+    });
+    if (data) setJobs(prev => [{ id: data.id, title: data.title, firm: data.firm, stage: data.stage, deadline: data.deadline || "", tags: data.tags || [], match: data.match_score || 0, track: data.track, level: data.experience_level, location: data.location, url: data.url, source: "Explore" }, ...prev]);
+  };
+
+  return (
+    <div className="page">
+      <div className="section-header">
+        <div><div className="eyebrow">Browse</div><div className="section-title">Explore All Jobs</div></div>
+        <span className="tag t-gold">{filtered.length} roles</span>
+      </div>
+
+      <div className="card-flat mb16">
+        <div className="flex items-c g12 flex-wrap">
+          <select className="input" style={{width:160}} value={filters.track} onChange={e => setFilters(f => ({ ...f, track: e.target.value }))}>
+            <option value="">All Tracks</option>
+            <option value="ib">Investment Banking</option>
+            <option value="consulting">Consulting</option>
+            <option value="product">Product</option>
+          </select>
+          <select className="input" style={{width:160}} value={filters.seniority} onChange={e => setFilters(f => ({ ...f, seniority: e.target.value }))}>
+            <option value="">All Levels</option>
+            <option value="undergrad">Undergraduate</option>
+            <option value="experienced">Experienced</option>
+          </select>
+          <input className="input" style={{flex:1,minWidth:200}} placeholder="Search jobs..." value={filters.search} onChange={e => setFilters(f => ({ ...f, search: e.target.value }))} />
+          <input className="input" style={{width:140}} placeholder="Location..." value={filters.location} onChange={e => setFilters(f => ({ ...f, location: e.target.value }))} />
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="ai-pulse"><div className="dot-spin"/>Loading jobs...</div>
+      ) : filtered.length === 0 ? (
+        <div className="card-tinted" style={{textAlign:"center",padding:"48px 24px"}}>
+          <div style={{fontSize:40,marginBottom:14}}>🌍</div>
+          <div style={{fontFamily:"Cormorant Garamond,serif",fontSize:20,fontWeight:700,color:"var(--ink)",marginBottom:8}}>No Jobs Found</div>
+          <div className="fs13 t-ink3">Jobs will appear here after the admin runs the crawler. Try adjusting your filters.</div>
+        </div>
+      ) : (
+        <div className="card">
+          <table className="table">
+            <thead><tr><th>Role</th><th>Company</th><th>Location</th><th>Track</th><th>Level</th><th>Posted</th><th>Action</th></tr></thead>
+            <tbody>
+              {filtered.map(j => (
+                <tr key={j.id}>
+                  <td className="fw6" style={{color:"var(--ink)",maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                    {j.url ? <a href={j.url} target="_blank" rel="noopener noreferrer" style={{color:"var(--ink)",textDecoration:"underline"}}>{j.title}</a> : j.title}
+                  </td>
+                  <td>{j.firm}</td>
+                  <td style={{fontSize:11,color:"var(--ink3)"}}>{j.location || "—"}</td>
+                  <td><span className="tag t-navy">{j.track || "—"}</span></td>
+                  <td><span className="tag t-ink">{j.experience_level || "—"}</span></td>
+                  <td className="mono fs11">{j.posted_at ? new Date(j.posted_at).toLocaleDateString() : new Date(j.created_at).toLocaleDateString()}</td>
+                  <td><button className="btn btn-primary btn-xs" onClick={() => saveJob(j)}>+ Save</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const PAGE_TITLES = {
-  dashboard:"Dashboard", discover:"Job Discovery", websites:"Website Manager",
-  pipeline:"CRM", playbooks:"Playbooks",
+  dashboard:"Dashboard", recommended:"Recommended Jobs", discover:"Job Discovery", explore:"Explore Jobs",
+  websites:"Website Manager", pipeline:"CRM", playbooks:"Playbooks",
   cv:"CV + Cover Letters", interview:"Interview Prep",
   extension:"Auto Apply", admin:"Admin Console",
 };
@@ -4545,15 +4828,17 @@ export default function JobSearchOS() {
 
   const renderPage = () => {
     switch (page) {
-      case "dashboard":  return <Dashboard jobs={jobs} profile={profile}/>;
-      case "discover":   return <JobDiscovery jobs={jobs} setJobs={setJobsWithDb} profile={profile} setProfile={()=>{}}/>;
-      case "websites":   return <WebsiteManager/>;
-      case "pipeline":   return <Pipeline jobs={jobs} setJobs={setJobsWithDb}/>;
-      case "playbooks":  return <Playbooks/>;
-      case "cv":         return <CVStudio jobs={jobs}/>;
-      case "interview":  return <Interview/>;
-      case "extension":  return <Extension/>;
-      case "admin":      return <Admin/>;
+      case "dashboard":    return <Dashboard jobs={jobs} profile={profile}/>;
+      case "recommended":  return <RecommendedJobs jobs={jobs} setJobs={setJobsWithDb} profile={profile}/>;
+      case "discover":     return <JobDiscovery jobs={jobs} setJobs={setJobsWithDb} profile={profile} setProfile={()=>{}}/>;
+      case "explore":      return <ExploreJobs jobs={jobs} setJobs={setJobsWithDb}/>;
+      case "websites":     return <WebsiteManager/>;
+      case "pipeline":     return <Pipeline jobs={jobs} setJobs={setJobsWithDb}/>;
+      case "playbooks":    return <Playbooks/>;
+      case "cv":           return <CVStudio jobs={jobs}/>;
+      case "interview":    return <Interview/>;
+      case "extension":    return <Extension/>;
+      case "admin":        return <Admin/>;
       default: return (
         <div className="page">
           <div className="coming-box">

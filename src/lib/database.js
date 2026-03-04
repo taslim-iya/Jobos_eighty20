@@ -245,3 +245,149 @@ export function exportToText(text, filename) {
   link.click();
   URL.revokeObjectURL(link.href);
 }
+
+// ─── SOURCES ───
+export async function fetchSources() {
+  const { data, error } = await supabase
+    .from("sources")
+    .select("*")
+    .order("created_at", { ascending: false });
+  return { data: data || [], error };
+}
+
+export async function upsertSource(source) {
+  if (source.id) {
+    const { data, error } = await supabase
+      .from("sources")
+      .update({
+        name: source.name,
+        base_url: source.base_url,
+        enabled: source.enabled,
+        crawl_type: source.crawl_type,
+        allowlist_paths: source.allowlist_paths || [],
+        frequency_minutes: source.frequency_minutes,
+        notes: source.notes,
+      })
+      .eq("id", source.id)
+      .select()
+      .single();
+    return { data, error };
+  }
+  const { data, error } = await supabase
+    .from("sources")
+    .insert(source)
+    .select()
+    .single();
+  return { data, error };
+}
+
+export async function deleteSource(sourceId) {
+  return supabase.from("sources").delete().eq("id", sourceId);
+}
+
+// ─── ADMIN TEMPLATES ───
+export async function fetchAdminTemplates() {
+  const { data, error } = await supabase
+    .from("admin_templates")
+    .select("*")
+    .order("created_at", { ascending: false });
+  return { data: data || [], error };
+}
+
+export async function upsertAdminTemplate(template) {
+  if (template.id) {
+    const { data, error } = await supabase
+      .from("admin_templates")
+      .update({ name: template.name, type: template.type, track: template.track, seniority: template.seniority, content: template.content, active: template.active, version: template.version })
+      .eq("id", template.id)
+      .select()
+      .single();
+    return { data, error };
+  }
+  const { data, error } = await supabase
+    .from("admin_templates")
+    .insert(template)
+    .select()
+    .single();
+  return { data, error };
+}
+
+export async function deleteAdminTemplate(id) {
+  return supabase.from("admin_templates").delete().eq("id", id);
+}
+
+// ─── ADMIN RULES ───
+export async function fetchAdminRules() {
+  const { data, error } = await supabase
+    .from("admin_rules")
+    .select("*")
+    .order("created_at", { ascending: false });
+  return { data: data || [], error };
+}
+
+export async function upsertAdminRule(rule) {
+  if (rule.id) {
+    const { data, error } = await supabase
+      .from("admin_rules")
+      .update({ name: rule.name, json_rules: rule.json_rules, active: rule.active })
+      .eq("id", rule.id)
+      .select()
+      .single();
+    return { data, error };
+  }
+  const { data, error } = await supabase
+    .from("admin_rules")
+    .insert(rule)
+    .select()
+    .single();
+  return { data, error };
+}
+
+// ─── UPLOADS ───
+export async function fetchUploads(ownerId) {
+  const { data, error } = await supabase
+    .from("uploads")
+    .select("*")
+    .eq("owner_id", ownerId)
+    .order("created_at", { ascending: false });
+  return { data: data || [], error };
+}
+
+export async function insertUpload(upload) {
+  const { data, error } = await supabase
+    .from("uploads")
+    .insert(upload)
+    .select()
+    .single();
+  return { data, error };
+}
+
+// ─── PROFILE JOB MATCHES ───
+export async function fetchProfileMatches(profileId) {
+  const { data, error } = await supabase
+    .from("profile_job_matches")
+    .select("*, jobs(*)")
+    .eq("profile_id", profileId)
+    .order("match_score", { ascending: false });
+  return { data: data || [], error };
+}
+
+export async function updateMatchStatus(matchId, status) {
+  const { data, error } = await supabase
+    .from("profile_job_matches")
+    .update({ status })
+    .eq("id", matchId)
+    .select()
+    .single();
+  return { data, error };
+}
+
+// ─── CRAWL RUNS ───
+export async function fetchCrawlRuns() {
+  const { data, error } = await supabase
+    .from("crawl_runs")
+    .select("*, sources(name)")
+    .order("created_at", { ascending: false })
+    .limit(50);
+  return { data: data || [], error };
+}

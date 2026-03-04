@@ -183,7 +183,7 @@ async function crawlSource(source: any, firecrawlKey: string | undefined): Promi
     const resp = await fetch(endpoint, {
       method: "POST",
       headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ url: source.base_url, limit: 100 }),
+      body: JSON.stringify({ url: source.base_url, limit: 60 }),
     });
     const data = await resp.json();
     const urls = (data?.links || []).filter((u: string) => {
@@ -191,11 +191,10 @@ async function crawlSource(source: any, firecrawlKey: string | undefined): Promi
         return source.allowlist_paths.some((p: string) => u.includes(p));
       }
       return true;
-    }).slice(0, 50);
+    }).slice(0, 5); // keep edge runtime fast and reliable
 
-    // Scrape each URL
-    const pages = [];
-    for (const url of urls) {
+    // Scrape in parallel (bounded) to avoid request timeouts
+    const scrapePromises = urls.map(async (url: string) => {
       try {
         const r = await fetch("https://api.firecrawl.dev/v1/scrape", {
           method: "POST",
@@ -203,10 +202,17 @@ async function crawlSource(source: any, firecrawlKey: string | undefined): Promi
           body: JSON.stringify({ url, formats: ["markdown"], onlyMainContent: true }),
         });
         const d = await r.json();
-        if (d?.data?.markdown) pages.push({ url, markdown: d.data.markdown });
-      } catch { /* skip */ }
-    }
-    return pages;
+        if (d?.data?.markdown) return { url, markdown: d.data.markdown };
+      } catch {
+        // skip failed pages
+      }
+      return null;
+    });
+
+    const settled = await Promise.allSettled(scrapePromises);
+    return settled
+      .filter((s): s is PromiseFulfilledResult<any> => s.status === "fulfilled" && !!s.value)
+      .map((s) => s.value);
   }
 
   // Default: crawl
@@ -215,8 +221,8 @@ async function crawlSource(source: any, firecrawlKey: string | undefined): Promi
     headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       url: source.base_url,
-      limit: 30,
-      maxDepth: 2,
+      limit: 5,
+      maxDepth: 1,
       includePaths: source.allowlist_paths?.length > 0 ? source.allowlist_paths : undefined,
       scrapeOptions: { formats: ["markdown"] },
     }),
@@ -314,7 +320,7 @@ async function runMatching(supabase: any): Promise<number> {
     .select("*")
     .gte("created_at", weekAgo)
     .order("created_at", { ascending: false })
-    .limit(500);
+    .limit(60);
 
   if (!recentJobs?.length) return 0;
 

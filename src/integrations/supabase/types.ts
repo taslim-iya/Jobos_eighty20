@@ -14,6 +14,72 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_rules: {
+        Row: {
+          active: boolean | null
+          created_at: string
+          id: string
+          json_rules: Json
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean | null
+          created_at?: string
+          id?: string
+          json_rules?: Json
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean | null
+          created_at?: string
+          id?: string
+          json_rules?: Json
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      admin_templates: {
+        Row: {
+          active: boolean | null
+          content: string
+          created_at: string
+          id: string
+          name: string
+          seniority: string | null
+          track: string | null
+          type: string
+          updated_at: string
+          version: number | null
+        }
+        Insert: {
+          active?: boolean | null
+          content?: string
+          created_at?: string
+          id?: string
+          name: string
+          seniority?: string | null
+          track?: string | null
+          type: string
+          updated_at?: string
+          version?: number | null
+        }
+        Update: {
+          active?: boolean | null
+          content?: string
+          created_at?: string
+          id?: string
+          name?: string
+          seniority?: string | null
+          track?: string | null
+          type?: string
+          updated_at?: string
+          version?: number | null
+        }
+        Relationships: []
+      }
       contacts: {
         Row: {
           channel: string | null
@@ -59,6 +125,47 @@ export type Database = {
         }
         Relationships: []
       }
+      crawl_runs: {
+        Row: {
+          created_at: string
+          ended_at: string | null
+          errors: string[] | null
+          id: string
+          pages_crawled: number | null
+          source_id: string
+          started_at: string | null
+          status: string | null
+        }
+        Insert: {
+          created_at?: string
+          ended_at?: string | null
+          errors?: string[] | null
+          id?: string
+          pages_crawled?: number | null
+          source_id: string
+          started_at?: string | null
+          status?: string | null
+        }
+        Update: {
+          created_at?: string
+          ended_at?: string | null
+          errors?: string[] | null
+          id?: string
+          pages_crawled?: number | null
+          source_id?: string
+          started_at?: string | null
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crawl_runs_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       documents: {
         Row: {
           ai_status: string | null
@@ -103,15 +210,23 @@ export type Database = {
       }
       jobs: {
         Row: {
+          apply_url: string | null
           created_at: string
           deadline: string | null
+          deadline_at: string | null
           description: string | null
           experience_level: string | null
+          extracted_json: Json | null
           firm: string
+          hash: string | null
           id: string
           location: string | null
           match_score: number | null
+          posted_at: string | null
+          remote_flag: boolean | null
           source: string | null
+          source_id: string | null
+          source_job_url: string | null
           stage: string
           tags: string[] | null
           title: string
@@ -121,15 +236,23 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          apply_url?: string | null
           created_at?: string
           deadline?: string | null
+          deadline_at?: string | null
           description?: string | null
           experience_level?: string | null
+          extracted_json?: Json | null
           firm: string
+          hash?: string | null
           id?: string
           location?: string | null
           match_score?: number | null
+          posted_at?: string | null
+          remote_flag?: boolean | null
           source?: string | null
+          source_id?: string | null
+          source_job_url?: string | null
           stage?: string
           tags?: string[] | null
           title: string
@@ -139,15 +262,23 @@ export type Database = {
           user_id: string
         }
         Update: {
+          apply_url?: string | null
           created_at?: string
           deadline?: string | null
+          deadline_at?: string | null
           description?: string | null
           experience_level?: string | null
+          extracted_json?: Json | null
           firm?: string
+          hash?: string | null
           id?: string
           location?: string | null
           match_score?: number | null
+          posted_at?: string | null
+          remote_flag?: boolean | null
           source?: string | null
+          source_id?: string | null
+          source_job_url?: string | null
           stage?: string
           tags?: string[] | null
           title?: string
@@ -156,10 +287,57 @@ export type Database = {
           url?: string | null
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "jobs_source_id_fk"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profile_job_matches: {
+        Row: {
+          created_at: string
+          id: string
+          job_id: string
+          match_reasons: string[] | null
+          match_score: number | null
+          profile_id: string
+          status: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          job_id: string
+          match_reasons?: string[] | null
+          match_score?: number | null
+          profile_id: string
+          status?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          job_id?: string
+          match_reasons?: string[] | null
+          match_score?: number | null
+          profile_id?: string
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profile_job_matches_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
+          company_blacklist: string[] | null
           created_at: string
           cv_text: string | null
           display_name: string | null
@@ -168,13 +346,23 @@ export type Database = {
           gpa: string | null
           graduation_year: string | null
           id: string
+          industries: string[] | null
+          keywords_exclude: string[] | null
+          keywords_include: string[] | null
           location: string | null
+          locations: string[] | null
+          salary_min: number | null
+          skills: string[] | null
+          start_date: string | null
           target_track: string | null
+          target_tracks: string[] | null
           university: string | null
           updated_at: string
           user_id: string
+          visa_status: string | null
         }
         Insert: {
+          company_blacklist?: string[] | null
           created_at?: string
           cv_text?: string | null
           display_name?: string | null
@@ -183,13 +371,23 @@ export type Database = {
           gpa?: string | null
           graduation_year?: string | null
           id?: string
+          industries?: string[] | null
+          keywords_exclude?: string[] | null
+          keywords_include?: string[] | null
           location?: string | null
+          locations?: string[] | null
+          salary_min?: number | null
+          skills?: string[] | null
+          start_date?: string | null
           target_track?: string | null
+          target_tracks?: string[] | null
           university?: string | null
           updated_at?: string
           user_id: string
+          visa_status?: string | null
         }
         Update: {
+          company_blacklist?: string[] | null
           created_at?: string
           cv_text?: string | null
           display_name?: string | null
@@ -198,11 +396,130 @@ export type Database = {
           gpa?: string | null
           graduation_year?: string | null
           id?: string
+          industries?: string[] | null
+          keywords_exclude?: string[] | null
+          keywords_include?: string[] | null
           location?: string | null
+          locations?: string[] | null
+          salary_min?: number | null
+          skills?: string[] | null
+          start_date?: string | null
           target_track?: string | null
+          target_tracks?: string[] | null
           university?: string | null
           updated_at?: string
           user_id?: string
+          visa_status?: string | null
+        }
+        Relationships: []
+      }
+      raw_pages: {
+        Row: {
+          created_at: string
+          fetched_at: string | null
+          hash: string | null
+          html_text: string | null
+          id: string
+          json_text: Json | null
+          source_id: string
+          url: string
+        }
+        Insert: {
+          created_at?: string
+          fetched_at?: string | null
+          hash?: string | null
+          html_text?: string | null
+          id?: string
+          json_text?: Json | null
+          source_id: string
+          url: string
+        }
+        Update: {
+          created_at?: string
+          fetched_at?: string | null
+          hash?: string | null
+          html_text?: string | null
+          id?: string
+          json_text?: Json | null
+          source_id?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "raw_pages_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sources: {
+        Row: {
+          allowlist_paths: string[] | null
+          base_url: string
+          crawl_type: string | null
+          created_at: string
+          enabled: boolean | null
+          frequency_minutes: number | null
+          id: string
+          name: string
+          notes: string | null
+          updated_at: string
+        }
+        Insert: {
+          allowlist_paths?: string[] | null
+          base_url: string
+          crawl_type?: string | null
+          created_at?: string
+          enabled?: boolean | null
+          frequency_minutes?: number | null
+          id?: string
+          name: string
+          notes?: string | null
+          updated_at?: string
+        }
+        Update: {
+          allowlist_paths?: string[] | null
+          base_url?: string
+          crawl_type?: string | null
+          created_at?: string
+          enabled?: boolean | null
+          frequency_minutes?: number | null
+          id?: string
+          name?: string
+          notes?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      uploads: {
+        Row: {
+          created_at: string
+          extracted_json: Json | null
+          file_path: string
+          file_type: string | null
+          id: string
+          owner_id: string
+          owner_type: string
+        }
+        Insert: {
+          created_at?: string
+          extracted_json?: Json | null
+          file_path: string
+          file_type?: string | null
+          id?: string
+          owner_id: string
+          owner_type?: string
+        }
+        Update: {
+          created_at?: string
+          extracted_json?: Json | null
+          file_path?: string
+          file_type?: string | null
+          id?: string
+          owner_id?: string
+          owner_type?: string
         }
         Relationships: []
       }

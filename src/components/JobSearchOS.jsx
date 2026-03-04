@@ -2006,6 +2006,12 @@ function CVStudio({ jobs }) {
   const [selectedJob, setSelectedJob] = useState(jobs[0] || null);
   const [jobDesc, setJobDesc] = useState("");
   const [extraExp, setExtraExp] = useState("");
+  const [jobInputMode, setJobInputMode] = useState("crm"); // "crm" | "url" | "paste"
+  const [jobUrlInput, setJobUrlInput] = useState("");
+  const [jobPasteInput, setJobPasteInput] = useState("");
+  const [customTitle, setCustomTitle] = useState("");
+  const [customFirm, setCustomFirm] = useState("");
+  const [fetchingUrl, setFetchingUrl] = useState(false);
   const [tone, setTone] = useState("professional");
   const [generatedCL, setGeneratedCL] = useState("");
   const [generating, setGenerating] = useState(false);
@@ -2688,28 +2694,117 @@ Return the full tailored CV text only, no commentary.`;
 
           {clStep === 1 && (
             <div className="card">
-              <div className="card-title mb16">Select Role</div>
-              <div className="grid g-auto g12">
-                {jobs.map(j=>(
-                  <div key={j.id} onClick={()=>{setSelectedJob(j);setClStep(2);}}
-                    className="card-flat"
-                    style={{cursor:"pointer",border:`1.5px solid ${selectedJob?.id===j.id?"var(--gold)":"var(--border2)"}`,borderRadius:10,padding:"14px 16px",transition:"all .15s"}}>
-                    <div className="fw6 fs12" style={{color:"var(--ink)",marginBottom:3}}>{j.title}</div>
-                    <div className="fs11 t-ink3">{j.firm}</div>
-                    <div className="flex g6 mt8">
-                      {j.tags.map(t=><span key={t} className="tag t-navy">{t}</span>)}
-                    </div>
-                  </div>
+              <div className="card-title mb16">How would you like to specify the role?</div>
+              <div className="flex g8 mb16">
+                {[
+                  { id: "crm", label: "📋 Select from CRM" },
+                  { id: "url", label: "🔗 Paste Job URL" },
+                  { id: "paste", label: "📝 Paste Job Description" },
+                ].map(m => (
+                  <button key={m.id} className={`btn btn-sm flex-1 ${jobInputMode === m.id ? "btn-primary" : "btn-outline"}`}
+                    onClick={() => setJobInputMode(m.id)}>{m.label}</button>
                 ))}
               </div>
-              <div className="mt16">
-                <label className="label">Or enter a custom role</label>
-                <div className="flex g10">
-                  <input className="input" placeholder="Job title..." style={{flex:1}}/>
-                  <input className="input" placeholder="Company..." style={{flex:1}}/>
-                  <button className="btn btn-primary" onClick={()=>setClStep(2)}>Next →</button>
+
+              {jobInputMode === "crm" && (
+                <>
+                  {jobs.length > 0 ? (
+                    <div className="grid g-auto g12">
+                      {jobs.map(j => (
+                        <div key={j.id} onClick={() => { setSelectedJob(j); setJobDesc(j.description || ""); setClStep(2); }}
+                          className="card-flat"
+                          style={{ cursor: "pointer", border: `1.5px solid ${selectedJob?.id === j.id ? "var(--gold)" : "var(--border2)"}`, borderRadius: 10, padding: "14px 16px", transition: "all .15s" }}>
+                          <div className="fw6 fs12" style={{ color: "var(--ink)", marginBottom: 3 }}>{j.title}</div>
+                          <div className="fs11 t-ink3">{j.firm}</div>
+                          <div className="flex g6 mt8">
+                            {(j.tags || []).map(t => <span key={t} className="tag t-navy">{t}</span>)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ textAlign: "center", padding: "24px 0", color: "var(--ink4)", fontSize: 12 }}>
+                      No jobs in your CRM yet. Use another method or add jobs to your CRM first.
+                    </div>
+                  )}
+                  <div className="mt16">
+                    <label className="label">Or enter a custom role</label>
+                    <div className="flex g10">
+                      <input className="input" placeholder="Job title..." style={{ flex: 1 }} value={customTitle} onChange={e => setCustomTitle(e.target.value)} />
+                      <input className="input" placeholder="Company..." style={{ flex: 1 }} value={customFirm} onChange={e => setCustomFirm(e.target.value)} />
+                      <button className="btn btn-primary" onClick={() => {
+                        setSelectedJob({ title: customTitle || "Role", firm: customFirm || "Company" });
+                        setClStep(2);
+                      }}>Next →</button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {jobInputMode === "url" && (
+                <div>
+                  <label className="label">Paste the job listing URL</label>
+                  <div className="flex g10">
+                    <input className="input" style={{ flex: 1 }} placeholder="https://careers.example.com/jobs/analyst-london"
+                      value={jobUrlInput} onChange={e => setJobUrlInput(e.target.value)} />
+                    <button className="btn btn-primary" disabled={!jobUrlInput.trim() || fetchingUrl} onClick={async () => {
+                      setFetchingUrl(true);
+                      try {
+                        const { data, error } = await supabase.functions.invoke('firecrawl-scrape', {
+                          body: { url: jobUrlInput.trim(), options: { formats: ['markdown'], onlyMainContent: true } }
+                        });
+                        if (error) throw new Error(error.message);
+                        const md = data?.data?.markdown || data?.markdown || "";
+                        if (!md) throw new Error("Could not extract content from that URL");
+                        setJobDesc(md);
+                        const firstLine = md.split("\n").find(l => l.trim()) || "";
+                        const title = firstLine.replace(/^#+\s*/, "").slice(0, 80) || "Role";
+                        setSelectedJob({ title, firm: new URL(jobUrlInput.trim()).hostname.replace("www.", ""), url: jobUrlInput.trim() });
+                        setClStep(2);
+                      } catch (err) {
+                        console.error("URL scrape failed:", err);
+                        alert("Could not fetch that URL. Try pasting the job description instead.\n\n" + (err.message || ""));
+                      }
+                      setFetchingUrl(false);
+                    }}>
+                      {fetchingUrl ? "⏳ Fetching..." : "Fetch & Continue →"}
+                    </button>
+                  </div>
+                  <div className="alert a-gold mt12" style={{ fontSize: 11 }}>
+                    💡 We'll scrape the page content to extract the job description automatically. Works best with public career pages.
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {jobInputMode === "paste" && (
+                <div>
+                  <div className="flex g10 mb12">
+                    <div className="fg" style={{ flex: 1 }}>
+                      <label className="label">Job Title</label>
+                      <input className="input" placeholder="e.g. Investment Banking Analyst" value={customTitle} onChange={e => setCustomTitle(e.target.value)} />
+                    </div>
+                    <div className="fg" style={{ flex: 1 }}>
+                      <label className="label">Company</label>
+                      <input className="input" placeholder="e.g. Goldman Sachs" value={customFirm} onChange={e => setCustomFirm(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="fg">
+                    <label className="label">Paste the full job description</label>
+                    <textarea className="input textarea" style={{ minHeight: 200 }}
+                      placeholder="Paste the complete job description here..."
+                      value={jobPasteInput} onChange={e => setJobPasteInput(e.target.value)} />
+                  </div>
+                  <div className="flex j-end mt12">
+                    <button className="btn btn-primary" onClick={() => {
+                      setJobDesc(jobPasteInput);
+                      setSelectedJob({ title: customTitle || "Role", firm: customFirm || "Company" });
+                      setClStep(2);
+                    }} disabled={!jobPasteInput.trim()}>
+                      Continue →
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

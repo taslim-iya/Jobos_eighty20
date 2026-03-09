@@ -5167,6 +5167,7 @@ function ExploreJobs({ jobs, setJobs }) {
             <option value="ib">Investment Banking</option>
             <option value="consulting">Consulting</option>
             <option value="product">Product</option>
+            <option value="postgrad">Post-Graduate Path</option>
           </select>
           <select className="input" style={{width:140}} value={filters.seniority} onChange={e => setFilters(f => ({ ...f, seniority: e.target.value }))}>
             <option value="">All Levels</option>

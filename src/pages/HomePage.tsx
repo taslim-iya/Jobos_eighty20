@@ -46,7 +46,7 @@ const STATS = [
   { value: "6", label: "Integrated Modules" },
   { value: "AI", label: "Powered Intelligence" },
   { value: "∞", label: "Applications Tracked" },
-  { value: "3", label: "Career Tracks" },
+  { value: "4", label: "Career Tracks" },
 ];
 
 export default function HomePage() {

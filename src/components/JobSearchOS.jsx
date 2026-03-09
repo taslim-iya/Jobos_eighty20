@@ -4261,20 +4261,24 @@ function Extension() {
       <div className="card mb20" style={{padding:0,overflow:"hidden"}}>
         <div style={{padding:"20px 24px",borderBottom:"1px solid var(--border2)",display:"flex",alignItems:"center",gap:12}}>
           <div style={{width:36,height:36,background:"linear-gradient(135deg, var(--gold), var(--gold3))",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:14}}>⚡</div>
-          <div>
+          <div style={{flex:1}}>
             <div className="fw6 fs14" style={{color:"var(--ink)"}}>Chrome Extension — Auto-Fill</div>
             <div className="fs11 t-ink4">Auto-fill job application forms with your profile data</div>
           </div>
+          <button className="btn btn-primary btn-sm" onClick={async()=>{
+            const { downloadExtensionZip } = await import("@/lib/extensionZip");
+            await downloadExtensionZip();
+          }}>⬇ Download Extension (.zip)</button>
         </div>
         <div style={{padding:"16px 24px"}}>
           <div className="grid g3 g12" style={{marginBottom:16}}>
             <div style={{background:"var(--surface2)",padding:"14px 16px",borderRadius:8}}>
               <div className="fw6 fs12 mb4" style={{color:"var(--gold)"}}>Step 1</div>
-              <div className="fs12 t-ink2">Download the <code style={{background:"var(--surface3)",padding:"1px 6px",borderRadius:4,fontSize:11}}>chrome-extension/</code> folder from this project</div>
+              <div className="fs12 t-ink2">Click <strong>Download Extension</strong> above to get the ZIP file</div>
             </div>
             <div style={{background:"var(--surface2)",padding:"14px 16px",borderRadius:8}}>
               <div className="fw6 fs12 mb4" style={{color:"var(--gold)"}}>Step 2</div>
-              <div className="fs12 t-ink2">Go to <code style={{background:"var(--surface3)",padding:"1px 6px",borderRadius:4,fontSize:11}}>chrome://extensions</code> → Enable Developer Mode → Load Unpacked</div>
+              <div className="fs12 t-ink2">Unzip, then go to <code style={{background:"var(--surface3)",padding:"1px 6px",borderRadius:4,fontSize:11}}>chrome://extensions</code> → Enable Developer Mode → Load Unpacked</div>
             </div>
             <div style={{background:"var(--surface2)",padding:"14px 16px",borderRadius:8}}>
               <div className="fw6 fs12 mb4" style={{color:"var(--gold)"}}>Step 3</div>

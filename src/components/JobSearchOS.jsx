@@ -4076,87 +4076,235 @@ function Outreach() {
    PAGE: EXTENSION
 ══════════════════════════════════════════════════════════════════════════════ */
 function Extension() {
-  const [filled, setFilled] = useState(0);
-  const [running, setRunning] = useState(false);
   const { user, profile: authProfile } = useAuth();
-  const displayName = authProfile?.display_name || user?.email?.split("@")[0] || "Your Name";
-  const nameParts = displayName.split(" ");
-  const fields = [
-    {name:"First Name",val: nameParts[0] || "—"},{name:"Last Name",val: nameParts.slice(1).join(" ") || "—"},
-    {name:"Email",val: user?.email || "—"},{name:"University",val: authProfile?.university || "—"},
-    {name:"GPA",val: authProfile?.gpa || "—"},{name:"Resume",val:"Your_CV.pdf"},
-  ];
-  const demo = () => {
-    setRunning(true); setFilled(0);
-    let c=0; const iv=setInterval(()=>{ c++; setFilled(c); if(c>=6){clearInterval(iv);setRunning(false);} }, 550);
+  const [queue, setQueue] = useState([]);
+  const [jobs, setJobs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(null); // job_id being generated
+  const [viewingLetter, setViewingLetter] = useState(null); // queue item being viewed
+  const [tab, setTab] = useState("queued"); // queued | generating | ready | applied
+  const [showAddModal, setShowAddModal] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    Promise.all([
+      fetchApplicationQueue(user.id),
+      fetchJobs(user.id),
+    ]).then(([qRes, jRes]) => {
+      setQueue(qRes.data || []);
+      setJobs(jRes.data || []);
+      setLoading(false);
+    });
+  }, [user]);
+
+  const queuedIds = new Set(queue.map(q => q.job_id));
+  const availableJobs = jobs.filter(j => !queuedIds.has(j.id));
+
+  const addToQueue = async (jobId) => {
+    const { data } = await upsertQueueItem(user.id, { job_id: jobId, status: "queued" });
+    if (data) {
+      // Re-fetch to get joined job data
+      const { data: updated } = await fetchApplicationQueue(user.id);
+      setQueue(updated || []);
+    }
+    setShowAddModal(false);
   };
+
+  const generateCoverLetter = async (item) => {
+    setGenerating(item.job_id);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-cover-letter", {
+        body: { job_id: item.job_id, type: "cover_letter" },
+      });
+      if (error) throw error;
+      if (data?.content) {
+        await upsertQueueItem(user.id, { id: item.id, status: "ready", cover_letter: data.content });
+        const { data: updated } = await fetchApplicationQueue(user.id);
+        setQueue(updated || []);
+      }
+    } catch (e) {
+      console.error("Generate failed:", e);
+      alert("Failed to generate cover letter. " + (e.message || ""));
+    }
+    setGenerating(null);
+  };
+
+  const generateFormAnswers = async (item) => {
+    setGenerating(item.job_id);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-cover-letter", {
+        body: { job_id: item.job_id, type: "form_answers" },
+      });
+      if (error) throw error;
+      if (data?.content) {
+        let parsed = {};
+        try { parsed = JSON.parse(data.content.replace(/```json\n?/g, "").replace(/```/g, "")); } catch { parsed = { raw: data.content }; }
+        await upsertQueueItem(user.id, { id: item.id, ai_answers: parsed });
+        const { data: updated } = await fetchApplicationQueue(user.id);
+        setQueue(updated || []);
+      }
+    } catch (e) {
+      console.error("Generate failed:", e);
+    }
+    setGenerating(null);
+  };
+
+  const markApplied = async (item) => {
+    await upsertQueueItem(user.id, { id: item.id, status: "applied", applied_at: new Date().toISOString() });
+    const { data: updated } = await fetchApplicationQueue(user.id);
+    setQueue(updated || []);
+  };
+
+  const removeFromQueue = async (item) => {
+    await deleteQueueItem(user.id, item.id);
+    setQueue(prev => prev.filter(q => q.id !== item.id));
+  };
+
+  const filteredQueue = queue.filter(q => {
+    if (tab === "all") return true;
+    return q.status === tab;
+  });
+
+  const counts = { queued: 0, ready: 0, applied: 0, all: queue.length };
+  queue.forEach(q => { if (counts[q.status] !== undefined) counts[q.status]++; });
+
   return (
     <div className="page">
       <div className="section-header">
-        <div><div className="eyebrow">Chrome Extension</div><div className="section-title">Supervised Autofill</div></div>
-        <button className="btn btn-primary">⬇ Install Extension</button>
+        <div><div className="eyebrow">Apply</div><div className="section-title">Application Queue</div></div>
+        <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>+ Add to Queue</button>
       </div>
-      <div className="alert a-gold mb20">🔒 <strong>Fill, never submit.</strong> The extension fills fields and suggests answers — you always click Submit. No application is ever auto-submitted.</div>
-      <div className="grid g2 g24">
-        <div>
-          <div className="card mb16">
-            <div className="card-header"><div className="card-title">Extension Preview</div><span className="tag t-green">v1.0.4</span></div>
-            <div style={{padding:"20px 0",display:"flex",justifyContent:"center"}}>
-              <div className="ext-shell">
-                <div className="ext-head">
-                  <div className="pulse-dot"/>
-                  <div style={{flex:1}}>
-                    <div className="ext-title">Job Search OS</div>
-                    <div className="ext-sub">Goldman Sachs — SA 2025</div>
+
+      <div className="alert a-gold mb20">🚀 <strong>Queue → Generate → Apply.</strong> Add jobs to your queue, generate AI-tailored cover letters and form answers, then apply with confidence.</div>
+
+      {/* Status tabs */}
+      <div className="flex g8 mb20" style={{borderBottom:"1px solid var(--border2)",paddingBottom:12}}>
+        {[["queued","📋 Queued"],["ready","✅ Ready"],["applied","🎯 Applied"],["all","📊 All"]].map(([key,label])=>(
+          <button key={key} className={`btn btn-sm ${tab===key?"btn-primary":"btn-outline"}`} onClick={()=>setTab(key)}>
+            {label} <span className="tag t-blue" style={{marginLeft:6,fontSize:10}}>{counts[key]}</span>
+          </button>
+        ))}
+      </div>
+
+      {loading ? <div style={{textAlign:"center",padding:40,color:"var(--ink4)"}}>Loading queue...</div> : (
+        filteredQueue.length === 0 ? (
+          <div className="card" style={{textAlign:"center",padding:40}}>
+            <div style={{fontSize:32,marginBottom:12}}>📭</div>
+            <div className="fw5 mb8" style={{color:"var(--ink2)"}}>No applications {tab !== "all" ? `in "${tab}"` : "yet"}</div>
+            <div className="fs12 t-ink4 mb16">Add jobs to your queue to get started with AI-powered applications</div>
+            <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>+ Add Jobs</button>
+          </div>
+        ) : (
+          <div className="grid g1 g16">
+            {filteredQueue.map(item => {
+              const job = item.jobs || {};
+              const isGenerating = generating === item.job_id;
+              return (
+                <div key={item.id} className="card" style={{padding:0,overflow:"hidden"}}>
+                  <div style={{padding:"16px 20px",display:"flex",alignItems:"center",gap:16}}>
+                    <div style={{flex:1}}>
+                      <div className="flex g8" style={{alignItems:"center",marginBottom:4}}>
+                        <span className={`tag ${item.status==="applied"?"t-green":item.status==="ready"?"t-blue":"t-gold"}`} style={{fontSize:10,textTransform:"uppercase"}}>{item.status}</span>
+                        {job.track && <span className="tag t-ink4" style={{fontSize:10}}>{job.track}</span>}
+                      </div>
+                      <div className="fw6 fs14" style={{color:"var(--ink)",marginBottom:2}}>{job.title || "Unknown Role"}</div>
+                      <div className="fs12 t-ink3">{job.firm || "—"} · {job.location || "—"}</div>
+                    </div>
+                    <div className="flex g6">
+                      {item.status === "queued" && (
+                        <>
+                          <button className="btn btn-primary btn-sm" onClick={() => generateCoverLetter(item)} disabled={isGenerating}>
+                            {isGenerating ? "⏳ Generating..." : "✨ Cover Letter"}
+                          </button>
+                          <button className="btn btn-outline btn-sm" onClick={() => generateFormAnswers(item)} disabled={isGenerating}>
+                            📝 Form Answers
+                          </button>
+                        </>
+                      )}
+                      {item.status === "ready" && (
+                        <>
+                          <button className="btn btn-outline btn-sm" onClick={() => setViewingLetter(item)}>👁 View Letter</button>
+                          {job.url && <a href={job.url} target="_blank" rel="noreferrer" className="btn btn-primary btn-sm">🔗 Apply</a>}
+                          <button className="btn btn-sm" style={{background:"var(--green)",color:"white",border:"none"}} onClick={() => markApplied(item)}>✓ Mark Applied</button>
+                        </>
+                      )}
+                      {item.status === "applied" && (
+                        <div className="fs11 t-ink4">Applied {item.applied_at ? new Date(item.applied_at).toLocaleDateString() : ""}</div>
+                      )}
+                      <button className="btn btn-sm btn-outline" style={{color:"var(--ink4)"}} onClick={() => removeFromQueue(item)}>✕</button>
+                    </div>
                   </div>
-                  <button className="btn btn-sm" style={{background:"rgba(255,255,255,0.15)",color:"white",borderColor:"rgba(255,255,255,0.2)"}} onClick={demo} disabled={running}>
-                    {running?"Filling...":"▶ Fill"}
-                  </button>
+                  {/* Show AI answers if available */}
+                  {item.ai_answers && Object.keys(item.ai_answers).length > 0 && item.ai_answers.raw === undefined && (
+                    <div style={{padding:"0 20px 16px",borderTop:"1px solid var(--border2)",marginTop:0,paddingTop:12}}>
+                      <div className="label mb8">AI Form Answers</div>
+                      <div className="grid g2 g12">
+                        {Object.entries(item.ai_answers).map(([key, val]) => (
+                          <div key={key} style={{background:"var(--surface2)",padding:"10px 14px",borderRadius:8}}>
+                            <div className="fw5 fs11 mb4" style={{color:"var(--ink2)",textTransform:"capitalize"}}>{key.replace(/_/g," ")}</div>
+                            <div className="fs11 t-ink3 lh17" style={{whiteSpace:"pre-wrap"}}>{String(val).slice(0,300)}{String(val).length > 300 ? "..." : ""}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                {fields.map((f,i)=>(
-                  <div key={i} className="ext-field">
-                    <div className="ext-fname">{f.name}</div>
-                    <div className="ext-fval" style={{color:i<filled?"var(--green)":"var(--ink4)"}}>{i<filled?f.val:"—"}</div>
-                    <div className={`ext-chk ${i<filled?"ext-filled-chk":"ext-pending-chk"}`}>{i<filled?"✓":"○"}</div>
-                  </div>
-                ))}
-                <div style={{padding:"12px 14px",borderTop:"1px solid var(--border2)",background:"var(--surface2)"}}>
-                  <div className="label mb6">Free-text: Why Goldman?</div>
-                  <div style={{fontSize:11.5,color:"var(--ink3)",lineHeight:1.6,marginBottom:10}}>"My interest stems from Goldman's sector-specific coverage depth in Technology M&A..."</div>
-                  <div className="flex g8">
-                    <button className="btn btn-primary btn-xs flex-1">✓ Insert</button>
-                    <button className="btn btn-outline btn-xs flex-1">Edit</button>
-                  </div>
-                </div>
-              </div>
+              );
+            })}
+          </div>
+        )
+      )}
+
+      {/* Cover Letter Modal */}
+      {viewingLetter && (
+        <div className="modal-overlay" onClick={() => setViewingLetter(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{maxWidth:640}}>
+            <div className="modal-header">
+              <div className="modal-title">Cover Letter — {viewingLetter.jobs?.firm}</div>
+              <button className="modal-close" onClick={() => setViewingLetter(null)}>✕</button>
+            </div>
+            <div style={{padding:24,whiteSpace:"pre-wrap",lineHeight:1.8,fontSize:13,color:"var(--ink2)",maxHeight:"60vh",overflow:"auto"}}>
+              {viewingLetter.cover_letter || "No cover letter generated yet."}
+            </div>
+            <div style={{padding:"12px 24px 24px",display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <button className="btn btn-outline" onClick={() => {
+                navigator.clipboard.writeText(viewingLetter.cover_letter || "");
+                alert("Copied to clipboard!");
+              }}>📋 Copy</button>
+              <button className="btn btn-primary" onClick={() => {
+                exportToText(viewingLetter.cover_letter || "", `cover_letter_${viewingLetter.jobs?.firm || "job"}`);
+              }}>⬇ Download</button>
             </div>
           </div>
         </div>
-        <div>
-          <div className="card mb16">
-            <div className="card-header"><div className="card-title">How it works</div></div>
-            <div className="tl">
-              {[{done:true,title:"Install Extension",desc:"Add to Chrome from the Web Store. Sign in with your Job Search OS account."},{done:true,title:"Open Application",desc:"Navigate to any job application. Extension detects form fields automatically."},{done:false,title:"Select Application Pack",desc:"Choose the pre-built pack for this role (CV variant + documents + answers)."},{done:false,title:"Review & Fill",desc:"Extension fills standard fields. You review each before confirming."},{done:false,title:"Approve Free-text",desc:"AI suggests answers to open-ended questions. You edit and insert manually."},{done:false,title:"Submit Yourself",desc:"Extension shows a completion checklist. You click Submit. Every time."}].map((s,i)=>(
-                <div key={i} className="tl-item">
-                  <div className={`tl-dot ${s.done?"done":""}`}/>
-                  <div className="fw5 fs12" style={{color:s.done?"var(--ink)":"var(--ink2)",marginBottom:3}}>{s.title}</div>
-                  <div className="fs11 t-ink3 lh17">{s.desc}</div>
-                </div>
-              ))}
+      )}
+
+      {/* Add to Queue Modal */}
+      {showAddModal && (
+        <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{maxWidth:560}}>
+            <div className="modal-header">
+              <div className="modal-title">Add Jobs to Queue</div>
+              <button className="modal-close" onClick={() => setShowAddModal(false)}>✕</button>
+            </div>
+            <div style={{padding:20,maxHeight:"50vh",overflow:"auto"}}>
+              {availableJobs.length === 0 ? (
+                <div style={{textAlign:"center",padding:24,color:"var(--ink4)",fontSize:13}}>All your saved jobs are already in the queue. Discover more jobs first.</div>
+              ) : (
+                availableJobs.map(j => (
+                  <div key={j.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:"1px solid var(--border2)"}}>
+                    <div style={{flex:1}}>
+                      <div className="fw5 fs13">{j.title}</div>
+                      <div className="fs11 t-ink4">{j.firm} · {j.location || "—"}</div>
+                    </div>
+                    <button className="btn btn-primary btn-sm" onClick={() => addToQueue(j.id)}>+ Queue</button>
+                  </div>
+                ))
+              )}
             </div>
           </div>
-          <div className="card">
-            <div className="card-title mb12">Audit Log</div>
-            <div style={{textAlign:"center",padding:"24px",color:"var(--ink4)",fontSize:12}}>No autofill sessions yet. Install the extension and start an application to see activity here.</div>
-            {[].map((l,i)=>(
-              <div key={i} style={{display:"flex",gap:14,padding:"8px 0",borderBottom:i<4?"1px solid var(--border2)":"none"}}>
-                <span className="mono fs10 t-ink4" style={{flexShrink:0}}>{l.t}</span>
-                <span className="fs12 t-ink2">{l.a}</span>
-              </div>
-            ))}
-          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

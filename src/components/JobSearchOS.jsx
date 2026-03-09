@@ -4226,10 +4226,16 @@ function Admin() {
 
   const loadAllJobs = async () => {
     setLoadingJobs(true);
-    const { data } = await supabase.from("jobs").select("id, title, firm, stage, track, location, source, created_at, user_id, match_score, deadline, url, source_job_url").order("created_at", { ascending: false }).range(0, 200);
+    const { data } = await supabase.from("jobs").select("id, title, firm, stage, track, location, source, source_id, created_at, user_id, match_score, deadline, url, source_job_url").order("created_at", { ascending: false }).range(0, 499);
     setAllJobs(data || []);
     setLoadingJobs(false);
   };
+
+  const filteredAdminJobs = allJobs.filter(j => {
+    if (!jobSourceFilter) return true;
+    if (jobSourceFilter === "manual") return !j.source_id;
+    return j.source_id === jobSourceFilter;
+  });
 
   useEffect(() => {
     if (adminTab === "jobs" && isAdmin && allJobs.length === 0) loadAllJobs();

@@ -3352,25 +3352,62 @@ ${textContent.slice(0, 6000)}`;
               );
             })}
           </div>
-          <div className="card">
-            <div className="card-header"><div className="card-title">All Roles</div><button className="btn btn-outline btn-sm" onClick={handleExportCSV}>⬇ Export</button></div>
-            <table className="table">
-              <thead><tr><th>Role</th><th>Firm</th><th>Stage</th><th>Track</th><th>Deadline</th><th>Match</th><th>Cover Letter</th><th>Actions</th></tr></thead>
-              <tbody>
-                {jobs.map(j=>(
-                  <tr key={j.id}>
-                    <td className="fw6" style={{color:"var(--ink)"}}>{j.title}</td>
-                    <td>{j.firm}</td>
-                    <td><span className={`tag t-${j.stage==="offer"?"green":j.stage==="interviewing"?"navy":"ink"}`}>{labels[j.stage]}</span></td>
-                    <td><span className="tag t-gold">{j.track}</span></td>
-                    <td><span className="mono" style={{color:"var(--gold)",fontSize:11}}>{j.deadline}</span></td>
-                    <td><span className="mono" style={{color:"var(--green)",fontSize:12}}>{j.match}%</span></td>
-                    <td><span className="tag t-ink">Draft</span></td>
-                    <td><button className="btn btn-outline btn-xs">Open →</button></td>
+          <div className="card" style={{padding:0,overflow:"hidden"}}>
+            <div className="card-header" style={{padding:"12px 16px",borderBottom:"1px solid var(--border2)"}}>
+              <div style={{display:"flex",alignItems:"center",gap:12}}>
+                <div className="card-title" style={{margin:0}}>All Roles</div>
+                {selectedJobs.size > 0 && (
+                  <button className="btn btn-sm" style={{background:"var(--red)",color:"white",border:"none",fontSize:11,padding:"4px 12px"}} onClick={bulkDeleteJobs} disabled={deleting}>
+                    {deleting ? "⏳ Deleting..." : `🗑 Delete ${selectedJobs.size} selected`}
+                  </button>
+                )}
+              </div>
+              <button className="btn btn-outline btn-sm" onClick={handleExportCSV}>⬇ Export</button>
+            </div>
+            <div style={{overflow:"auto"}}>
+              <table className="table" style={{fontSize:12,borderCollapse:"collapse",width:"100%"}}>
+                <thead>
+                  <tr style={{background:"var(--surface2)",position:"sticky",top:0,zIndex:1}}>
+                    <th style={{width:36,padding:"8px",textAlign:"center"}}><input type="checkbox" checked={selectedJobs.size===jobs.length&&jobs.length>0} onChange={toggleSelectAll} style={{cursor:"pointer",accentColor:"var(--gold)"}}/></th>
+                    <th style={{padding:"8px 12px",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.5px",color:"var(--ink3)"}}>Role</th>
+                    <th style={{padding:"8px 12px",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.5px",color:"var(--ink3)"}}>Firm</th>
+                    <th style={{padding:"8px 12px",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.5px",color:"var(--ink3)",width:120}}>Stage</th>
+                    <th style={{padding:"8px 12px",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.5px",color:"var(--ink3)",width:100}}>Track</th>
+                    <th style={{padding:"8px 12px",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.5px",color:"var(--ink3)",width:100}}>Location</th>
+                    <th style={{padding:"8px 12px",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.5px",color:"var(--ink3)",width:100}}>Deadline</th>
+                    <th style={{padding:"8px 12px",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.5px",color:"var(--ink3)",width:60}}>Match</th>
+                    <th style={{padding:"8px 12px",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.5px",color:"var(--ink3)",width:80,textAlign:"center"}}>Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {jobs.map((j,i)=>(
+                    <tr key={j.id} style={{borderBottom:"1px solid var(--border2)",background:selectedJobs.has(j.id)?"var(--gold-bg)":i%2===0?"transparent":"var(--surface2)",transition:"background 0.1s"}}
+                      onMouseEnter={e=>{if(!selectedJobs.has(j.id))e.currentTarget.style.background="var(--surface2)"}}
+                      onMouseLeave={e=>{if(!selectedJobs.has(j.id))e.currentTarget.style.background=i%2===0?"transparent":"var(--surface2)"}}>
+                      <td style={{padding:"6px 8px",textAlign:"center"}}><input type="checkbox" checked={selectedJobs.has(j.id)} onChange={()=>toggleSelectJob(j.id)} style={{cursor:"pointer",accentColor:"var(--gold)"}}/></td>
+                      <td style={{padding:"6px 12px",fontWeight:600,color:"var(--ink)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:200}}>{j.title}</td>
+                      <td style={{padding:"6px 12px",color:"var(--ink2)"}}>{j.firm}</td>
+                      <td style={{padding:"6px 12px"}}>
+                        <select value={j.stage} onChange={e=>updateJobStage(j.id,e.target.value)} style={{fontSize:11,padding:"2px 6px",border:"1px solid var(--border2)",borderRadius:4,background:"var(--surface)",color:"var(--ink2)",cursor:"pointer"}}>
+                          {stages.map(s=><option key={s} value={s}>{labels[s]}</option>)}
+                        </select>
+                      </td>
+                      <td style={{padding:"6px 12px"}}><span className="tag t-gold" style={{fontSize:10}}>{j.track||"—"}</span></td>
+                      <td style={{padding:"6px 12px",fontSize:11,color:"var(--ink3)"}}>{j.location||"—"}</td>
+                      <td style={{padding:"6px 12px"}}><span className="mono" style={{color:"var(--gold)",fontSize:11}}>{j.deadline||"—"}</span></td>
+                      <td style={{padding:"6px 12px"}}><span className="mono" style={{color:"var(--green)",fontSize:11}}>{j.match||0}%</span></td>
+                      <td style={{padding:"6px 8px",textAlign:"center"}}>
+                        <div style={{display:"flex",gap:4,justifyContent:"center"}}>
+                          {j.url && <a href={j.url} target="_blank" rel="noreferrer" style={{color:"var(--gold)",fontSize:12,textDecoration:"none"}} title="Open link">🔗</a>}
+                          <button onClick={()=>deleteJobRow(j.id)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--ink4)",fontSize:12,padding:"0 2px"}} title="Delete" onMouseEnter={e=>e.target.style.color="var(--red)"} onMouseLeave={e=>e.target.style.color="var(--ink4)"}>🗑</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {jobs.length===0 && <tr><td colSpan={9} style={{textAlign:"center",padding:24,color:"var(--ink4)",fontSize:12}}>No roles tracked yet</td></tr>}
+                </tbody>
+              </table>
+            </div>
           </div>
         </>
       )}

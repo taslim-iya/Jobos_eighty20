@@ -1,8 +1,7 @@
-// JobSearchOS Auto-Fill Content Script
+// JobSearchOS Auto-Fill Content Script — Enhanced
 (() => {
   'use strict';
 
-  // ── Field Mapping Patterns ──
   const FIELD_MAP = {
     first_name: [/first.?name/i, /given.?name/i, /fname/i, /prénom/i],
     last_name: [/last.?name/i, /family.?name/i, /surname/i, /lname/i],
@@ -21,31 +20,32 @@
     skills: [/skills/i, /competenc/i, /technologies/i],
   };
 
-  // ── Detect Application Forms ──
-  function detectApplicationForm() {
-    const forms = document.querySelectorAll('form');
-    const inputs = document.querySelectorAll('input, textarea, select');
-    const applyIndicators = [
-      /apply/i, /application/i, /candidate/i, /submit.*resume/i,
-      /upload.*cv/i, /job.*application/i,
-    ];
-
-    const pageText = document.title + ' ' + (document.querySelector('h1')?.textContent || '');
-    const isApplyPage = applyIndicators.some(r => r.test(pageText)) || inputs.length > 3;
-
-    // Detect ATS platform
+  // ── Platform Detection ──
+  function detectPlatform() {
     const url = window.location.href;
-    const isATS = /greenhouse|lever|workday|myworkdayjobs|smartrecruiters|icims|taleo|brassring|jobvite|ashbyhq/.test(url);
-    const isLinkedIn = /linkedin\.com/.test(url) && /jobs|apply/.test(url);
-
-    return { isApplyPage: isApplyPage || isATS || isLinkedIn, isATS, isLinkedIn };
+    if (/linkedin\.com/.test(url) && /jobs|apply/.test(url)) return 'linkedin';
+    if (/greenhouse/.test(url)) return 'greenhouse';
+    if (/lever\.co/.test(url)) return 'lever';
+    if (/workday|myworkdayjobs/.test(url)) return 'workday';
+    if (/smartrecruiters/.test(url)) return 'smartrecruiters';
+    if (/icims/.test(url)) return 'icims';
+    if (/ashbyhq/.test(url)) return 'ashby';
+    return 'generic';
   }
 
-  // ── Extract Job Title from Page ──
+  function detectApplicationForm() {
+    const inputs = document.querySelectorAll('input, textarea, select');
+    const pageText = document.title + ' ' + (document.querySelector('h1')?.textContent || '');
+    const applyIndicators = [/apply/i, /application/i, /candidate/i, /submit.*resume/i, /upload.*cv/i, /job.*application/i];
+    const platform = detectPlatform();
+    const isApplyPage = applyIndicators.some(r => r.test(pageText)) || inputs.length > 3 || platform !== 'generic';
+    return { isApplyPage, platform };
+  }
+
   function extractJobTitle() {
     const selectors = [
       'h1.job-title', 'h1.posting-headline', '.job-title', '[data-automation-id="jobPostingHeader"]',
-      '.jobs-unified-top-card__job-title', 'h1', '.posting-headline h2',
+      '.jobs-unified-top-card__job-title', '.top-card-layout__title', 'h1', '.posting-headline h2',
     ];
     for (const sel of selectors) {
       const el = document.querySelector(sel);
@@ -54,40 +54,33 @@
     return document.title.slice(0, 100);
   }
 
-  // ── Identify Field Type ──
   function identifyField(el) {
     const attrs = [
       el.name, el.id, el.placeholder,
       el.getAttribute('aria-label'), el.getAttribute('data-automation-id'),
       el.getAttribute('autocomplete'),
     ].filter(Boolean).join(' ');
-
-    // Check label
     let labelText = '';
     if (el.id) {
       const label = document.querySelector(`label[for="${el.id}"]`);
       if (label) labelText = label.textContent;
     }
-    const wrapper = el.closest('.field, .form-group, [data-automation-id]');
+    const wrapper = el.closest('.field, .form-group, [data-automation-id], .fb-form-element, .jobs-easy-apply-form-element');
     if (wrapper) {
-      const lbl = wrapper.querySelector('label, .label, legend');
+      const lbl = wrapper.querySelector('label, .label, legend, .fb-form-element-label');
       if (lbl) labelText = lbl.textContent;
     }
-
     const searchText = `${attrs} ${labelText}`.toLowerCase();
-
     for (const [field, patterns] of Object.entries(FIELD_MAP)) {
       if (patterns.some(p => p.test(searchText))) return field;
     }
     return null;
   }
 
-  // ── Get Value from Profile ──
   function getProfileValue(fieldType, profile) {
     if (!profile) return null;
     const name = profile.display_name || '';
     const parts = name.split(' ');
-
     const map = {
       first_name: parts[0] || '',
       last_name: parts.slice(1).join(' ') || '',
@@ -105,15 +98,11 @@
       experience: profile.experience_level || '',
       skills: Array.isArray(profile.skills) ? profile.skills.join(', ') : (profile.skills || ''),
     };
-
     return map[fieldType] || null;
   }
 
-  // ── Fill a Single Field ──
   function fillField(el, value) {
     if (!value || el.disabled || el.readOnly) return false;
-
-    // Handle select elements
     if (el.tagName === 'SELECT') {
       const options = Array.from(el.options);
       const match = options.find(o =>
@@ -128,18 +117,11 @@
       }
       return false;
     }
-
-    // Handle text inputs / textareas
     const nativeSetter = Object.getOwnPropertyDescriptor(
       el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, 'value'
     )?.set;
-
-    if (nativeSetter) {
-      nativeSetter.call(el, value);
-    } else {
-      el.value = value;
-    }
-
+    if (nativeSetter) nativeSetter.call(el, value);
+    else el.value = value;
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
     el.dispatchEvent(new Event('blur', { bubbles: true }));
@@ -147,41 +129,31 @@
     return true;
   }
 
-  // ── Visual Feedback ──
   function highlightField(el) {
     el.classList.add('jsos-filled');
     el.style.transition = 'box-shadow 0.3s, border-color 0.3s';
     el.style.boxShadow = '0 0 0 2px rgba(0,87,155,0.3)';
     el.style.borderColor = '#00579B';
-    setTimeout(() => {
-      el.style.boxShadow = '';
-      el.style.borderColor = '';
-    }, 3000);
+    setTimeout(() => { el.style.boxShadow = ''; el.style.borderColor = ''; }, 3000);
   }
 
-  // ── Auto-Fill All Fields ──
   function autofillPage(profile) {
     const inputs = document.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="file"]), textarea, select');
     let filledCount = 0;
-
     inputs.forEach(el => {
-      if (el.value && el.value.trim()) return; // Skip already filled
+      if (el.value && el.value.trim()) return;
       const fieldType = identifyField(el);
       if (!fieldType) return;
       const value = getProfileValue(fieldType, profile);
       if (fillField(el, value)) filledCount++;
     });
-
-    // Show badge
     showFillBadge(filledCount);
     return filledCount;
   }
 
-  // ── Fill Badge ──
   function showFillBadge(count) {
     const existing = document.getElementById('jsos-fill-badge');
     if (existing) existing.remove();
-
     const badge = document.createElement('div');
     badge.id = 'jsos-fill-badge';
     badge.innerHTML = `
@@ -193,62 +165,223 @@
           display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;">
           ${count}
         </span>
-        <span>${count > 0 ? `fields auto-filled by JobSearchOS` : 'No matching fields found'}</span>
-      </div>
-    `;
+        <span>${count > 0 ? 'fields auto-filled by JobSearchOS' : 'No matching fields found'}</span>
+      </div>`;
     document.body.appendChild(badge);
     setTimeout(() => badge.remove(), 4000);
   }
 
-  // ── Insert Cover Letter into Textarea ──
   function insertCoverLetter(text) {
     const textareas = document.querySelectorAll('textarea');
-    // Try to find cover letter field
     let target = null;
     for (const ta of textareas) {
       const context = [ta.name, ta.id, ta.placeholder, ta.getAttribute('aria-label')].join(' ').toLowerCase();
-      if (/cover|letter|message|why|motivation|additional/i.test(context)) {
-        target = ta;
-        break;
+      if (/cover|letter|message|why|motivation|additional/i.test(context)) { target = ta; break; }
+    }
+    if (!target) {
+      target = Array.from(textareas).filter(t => t.offsetParent !== null)
+        .sort((a, b) => (b.offsetWidth * b.offsetHeight) - (a.offsetWidth * a.offsetHeight))[0];
+    }
+    if (target) { fillField(target, text); return true; }
+    return false;
+  }
+
+  // ══════════════════════════════════════════════
+  // LINKEDIN EASY APPLY — Multi-step handler
+  // ══════════════════════════════════════════════
+  function isLinkedInEasyApply() {
+    return !!document.querySelector('.jobs-easy-apply-modal, .jobs-easy-apply-content, [data-test-modal-id="easy-apply-modal"]');
+  }
+
+  function linkedInFillCurrentStep(profile) {
+    // Fill visible fields in the current Easy Apply step
+    const modal = document.querySelector('.jobs-easy-apply-modal, .jobs-easy-apply-content, [data-test-modal-id="easy-apply-modal"]');
+    if (!modal) return 0;
+    const inputs = modal.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="file"]), textarea, select');
+    let filled = 0;
+    inputs.forEach(el => {
+      if (el.value && el.value.trim()) return;
+      const fieldType = identifyField(el);
+      if (!fieldType) return;
+      const value = getProfileValue(fieldType, profile);
+      if (fillField(el, value)) filled++;
+    });
+    return filled;
+  }
+
+  function linkedInClickNext() {
+    // Look for "Next", "Review", or "Submit application" button
+    const buttons = document.querySelectorAll('.jobs-easy-apply-modal button, .jobs-easy-apply-content button, [data-test-modal-id="easy-apply-modal"] button');
+    for (const btn of buttons) {
+      const text = btn.textContent?.trim().toLowerCase() || '';
+      if (/^next$|^continue$|^review$/.test(text)) {
+        btn.click();
+        return 'next';
       }
     }
-    // Fallback: largest visible textarea
-    if (!target) {
-      target = Array.from(textareas).filter(t => t.offsetParent !== null).sort((a, b) => {
-        const aSize = a.offsetWidth * a.offsetHeight;
-        const bSize = b.offsetWidth * b.offsetHeight;
-        return bSize - aSize;
-      })[0];
+    // Check for submit
+    for (const btn of buttons) {
+      const text = btn.textContent?.trim().toLowerCase() || '';
+      const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+      if (/submit application|submit/i.test(text) || /submit/i.test(ariaLabel)) {
+        return 'submit_ready';
+      }
     }
-    if (target) {
-      fillField(target, text);
-      return true;
+    return 'unknown';
+  }
+
+  async function linkedInAutoApply(profile, autoSubmit = false) {
+    let totalFilled = 0;
+    let steps = 0;
+    const maxSteps = 10; // Safety limit
+
+    while (steps < maxSteps) {
+      steps++;
+      await sleep(800); // Wait for animations
+      const filled = linkedInFillCurrentStep(profile);
+      totalFilled += filled;
+
+      const action = linkedInClickNext();
+      if (action === 'submit_ready') {
+        if (autoSubmit) {
+          const submitBtn = Array.from(document.querySelectorAll('.jobs-easy-apply-modal button, .jobs-easy-apply-content button'))
+            .find(b => /submit application|submit/i.test(b.textContent?.trim() || ''));
+          if (submitBtn) {
+            submitBtn.click();
+            showFillBadge(totalFilled);
+            return { filled: totalFilled, submitted: true };
+          }
+        }
+        showFillBadge(totalFilled);
+        return { filled: totalFilled, submitted: false, message: 'Ready to submit — review and click Submit' };
+      }
+      if (action === 'unknown') break;
+    }
+
+    showFillBadge(totalFilled);
+    return { filled: totalFilled, submitted: false };
+  }
+
+  // ══════════════════════════════════════════════
+  // ONE-CLICK APPLY
+  // ══════════════════════════════════════════════
+  function clickSubmitButton() {
+    const selectors = [
+      'button[type="submit"]',
+      'input[type="submit"]',
+      'button[data-automation-id="submit"]',
+      '.btn-submit',
+    ];
+    for (const sel of selectors) {
+      const btn = document.querySelector(sel);
+      if (btn && btn.offsetParent !== null) {
+        btn.click();
+        return true;
+      }
+    }
+    // Fallback: find button with submit-like text
+    const buttons = document.querySelectorAll('button');
+    for (const btn of buttons) {
+      const text = (btn.textContent || '').trim().toLowerCase();
+      if (/^submit|^apply now|^send application|^complete/i.test(text) && btn.offsetParent !== null) {
+        btn.click();
+        return true;
+      }
     }
     return false;
   }
 
+  // ══════════════════════════════════════════════
+  // AUTO-FILL ON PAGE LOAD
+  // ══════════════════════════════════════════════
+  function tryAutoFillOnLoad() {
+    chrome.storage.local.get(['user_profile', 'auto_fill_enabled'], (result) => {
+      if (!result.auto_fill_enabled || !result.user_profile) return;
+      const { isApplyPage, platform } = detectApplicationForm();
+      if (!isApplyPage) return;
+
+      // Small delay to let page fully render
+      setTimeout(() => {
+        if (platform === 'linkedin' && isLinkedInEasyApply()) {
+          linkedInFillCurrentStep(result.user_profile);
+        } else {
+          autofillPage(result.user_profile);
+        }
+      }, 1500);
+    });
+  }
+
+  // Run auto-fill on load
+  if (document.readyState === 'complete') {
+    tryAutoFillOnLoad();
+  } else {
+    window.addEventListener('load', () => setTimeout(tryAutoFillOnLoad, 1000));
+  }
+
+  // Also watch for LinkedIn Easy Apply modal opening
+  const observer = new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      for (const node of m.addedNodes) {
+        if (node.nodeType === 1 && (
+          node.classList?.contains('jobs-easy-apply-modal') ||
+          node.querySelector?.('.jobs-easy-apply-modal')
+        )) {
+          chrome.storage.local.get(['user_profile', 'auto_fill_enabled'], (result) => {
+            if (result.auto_fill_enabled && result.user_profile) {
+              setTimeout(() => linkedInFillCurrentStep(result.user_profile), 800);
+            }
+          });
+        }
+      }
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+
+  // ── Utility ──
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
   // ── Message Handler ──
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'GET_PAGE_INFO') {
-      const { isApplyPage } = detectApplicationForm();
-      sendResponse({ hasForm: isApplyPage, jobTitle: extractJobTitle() });
+      const { isApplyPage, platform } = detectApplicationForm();
+      sendResponse({
+        hasForm: isApplyPage,
+        jobTitle: extractJobTitle(),
+        platform,
+        isLinkedInEasyApply: platform === 'linkedin' && isLinkedInEasyApply(),
+      });
     } else if (msg.type === 'AUTOFILL') {
       const count = autofillPage(msg.profile);
       sendResponse({ filled: count });
     } else if (msg.type === 'INSERT_COVER_LETTER') {
       const success = insertCoverLetter(msg.text);
       sendResponse({ success });
+    } else if (msg.type === 'LINKEDIN_AUTO_APPLY') {
+      linkedInAutoApply(msg.profile, msg.autoSubmit).then(sendResponse);
+      return true; // async
+    } else if (msg.type === 'ONE_CLICK_APPLY') {
+      // Fill → optionally insert cover letter → submit
+      (async () => {
+        const filled = autofillPage(msg.profile);
+        if (msg.coverLetter) {
+          insertCoverLetter(msg.coverLetter);
+        }
+        await sleep(500);
+        const submitted = msg.autoSubmit ? clickSubmitButton() : false;
+        sendResponse({ filled, submitted });
+      })();
+      return true; // async
+    } else if (msg.type === 'SET_AUTO_FILL') {
+      chrome.storage.local.set({ auto_fill_enabled: msg.enabled });
+      sendResponse({ ok: true });
     }
     return true;
   });
 
-  // ── Add slide-in animation ──
+  // Add animation styles
   const style = document.createElement('style');
   style.textContent = `
-    @keyframes jsos-slide-in {
-      from { transform: translateY(20px); opacity: 0; }
-      to { transform: translateY(0); opacity: 1; }
-    }
+    @keyframes jsos-slide-in { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
   `;
   document.head.appendChild(style);
 })();

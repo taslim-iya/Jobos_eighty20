@@ -81,7 +81,7 @@ body {
 
 .sidebar {
   width: 240px;
-  min-height: 100vh;
+  height: 100vh;
   background: var(--side-bg);
   position: fixed;
   left: 0; top: 0;
@@ -89,6 +89,8 @@ body {
   flex-direction: column;
   z-index: 100;
   border-right: 1px solid var(--border2);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .main {

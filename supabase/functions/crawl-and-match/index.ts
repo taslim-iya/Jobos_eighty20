@@ -115,10 +115,10 @@ Deno.serve(async (req) => {
         let inserted = 0;
         for (const job of extractedJobs) {
           const hash = await hashText(job.source_job_url || job.title + job.company);
-          const { error } = await supabase.from("jobs").insert({
-            user_id: "00000000-0000-0000-0000-000000000000", // system placeholder
-            source_id: source.id,
-            source_job_url: job.source_job_url,
+           const { error } = await supabase.from("jobs").insert({
+             user_id: requesterUserId,
+             source_id: source.id,
+             source_job_url: job.source_job_url,
             title: job.title,
             firm: job.company,
             location: job.location || null,

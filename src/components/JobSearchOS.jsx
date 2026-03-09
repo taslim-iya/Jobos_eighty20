@@ -1477,11 +1477,12 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
   const runWebsiteScan = async () => {
     setScanning(true);
     setScanLog([]);
-    const trackName = trackFilter === "ib" ? "investment banking" : trackFilter === "consulting" ? "management consulting" : "product management";
+    const trackName = trackFilter === "ib" ? "investment banking" : trackFilter === "consulting" ? "management consulting" : trackFilter === "postgrad" ? "graduate program" : "product management";
     const trackKw = {
       ib: "investment banking analyst associate M&A ECM DCM summer analyst leveraged finance",
       consulting: "management consulting business analyst strategy consultant associate",
       product: "product manager APM associate product manager growth PM",
+      postgrad: "graduate program rotational program graduate scheme trainee MBA",
     };
 
     try {

@@ -1341,6 +1341,9 @@ const NAV = [
   { section: "Apply", items: [
     { id:"extension",  icon:"🚀", label:"Auto Apply" },
   ]},
+  { section: "Account", items: [
+    { id:"profile",    icon:"👤", label:"My Profile" },
+  ]},
   { section: "Admin", items: [
     { id:"admin", icon:"⚙️", label:"Admin Console" },
     { id:"websites",  icon:"🌐", label:"Website Manager" },

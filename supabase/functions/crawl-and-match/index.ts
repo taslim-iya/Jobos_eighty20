@@ -216,10 +216,63 @@ async function crawlSource(source: any, firecrawlKey: string | undefined): Promi
   }
 
   if (source.crawl_type === "sitemap") {
-    // NOTE: Some modern sites (like Trackr) render opportunities client-side.
-    // Firecrawl "map" can miss those links, so we scrape the page for links first,
-    // then follow a bounded subset of internal URLs.
+    // Strategy: First try AI JSON extraction on the main listing page to get ALL jobs
+    // from the rendered table. This is far more effective than following sub-links.
+    console.log("Attempting AI table extraction on:", source.base_url);
+    
+    const tableResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: source.base_url,
+        formats: [
+          {
+            type: "json",
+            schema: {
+              type: "object",
+              properties: {
+                jobs: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      title: { type: "string", description: "Job/programme title" },
+                      company: { type: "string", description: "Company or firm name" },
+                      location: { type: "string", description: "Job location" },
+                      deadline: { type: "string", description: "Application deadline" },
+                      url: { type: "string", description: "Link to the job/programme page" },
+                      track: { type: "string", description: "Career track like IB, consulting, asset management, etc." },
+                      status: { type: "string", description: "Application status (open, closed, rolling)" },
+                    },
+                  },
+                },
+              },
+            },
+            prompt: "Extract ALL job/programme listings from this page table. For each row, get the programme title, company name, location, deadline, application URL, career track, and status. Include every single row visible on the page.",
+          },
+          "markdown",
+        ],
+        onlyMainContent: true,
+        waitFor: 10000,
+      }),
+    });
 
+    const tableData = await tableResp.json();
+    const aiJobs = tableData?.data?.json?.jobs || tableData?.json?.jobs || [];
+    console.log(`AI table extraction found ${aiJobs.length} jobs from ${source.base_url}`);
+
+    if (aiJobs.length > 0) {
+      // Return as synthetic pages so extractJobsFromPages can process them
+      // But we'll add a special flag so we use the AI-extracted data directly
+      return aiJobs.map((j: any) => ({
+        url: j.url?.startsWith("http") ? j.url : j.url ? `https://app.the-trackr.com${j.url}` : source.base_url,
+        markdown: tableData?.data?.markdown || "",
+        _aiExtracted: j,
+      }));
+    }
+
+    // Fallback: scrape sub-links if AI extraction found nothing
+    console.log("AI extraction found 0 jobs, falling back to sub-link scraping");
     const baseHost = new URL(source.base_url).hostname.replace(/^www\./, "");
 
     const filterAllowlist = (u: string) => {
@@ -245,45 +298,32 @@ async function crawlSource(source: any, firecrawlKey: string | undefined): Promi
 
     const links = scrapedLinks
       .filter((u) => {
-        try {
-          return new URL(u).hostname.replace(/^www\./, "") === baseHost;
-        } catch {
-          return false;
-        }
+        try { return new URL(u).hostname.replace(/^www\./, "") === baseHost; } catch { return false; }
       })
       .filter(filterAllowlist);
 
-    // Prioritize likely job/programme pages first, then take a tight bounded sample (keeps runtime fast)
     const prioritized = links
       .filter((u: string) => /\/programme\/|\/company\/|internship|graduate|summer/i.test(u))
       .concat(links)
       .filter((u: string, i: number, arr: string[]) => arr.indexOf(u) === i)
-      .slice(0, 8);
+      .slice(0, 20);
 
     const scrapeOne = async (url: string) => {
       try {
         const r = await fetch("https://api.firecrawl.dev/v1/scrape", {
           method: "POST",
           headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            url,
-            formats: ["markdown"],
-            onlyMainContent: true,
-            waitFor: 4000,
-          }),
+          body: JSON.stringify({ url, formats: ["markdown"], onlyMainContent: true, waitFor: 4000 }),
         });
         const d = await r.json();
         if (d?.data?.markdown) return { url, markdown: d.data.markdown };
-      } catch {
-        // skip failed pages
-      }
+      } catch { /* skip */ }
       return null;
     };
 
-    // Scrape in bounded batches to keep the edge runtime reliable
     const pages: any[] = [];
-    for (let i = 0; i < prioritized.length; i += 2) {
-      const batch = prioritized.slice(i, i + 2);
+    for (let i = 0; i < prioritized.length; i += 3) {
+      const batch = prioritized.slice(i, i + 3);
       const settled = await Promise.allSettled(batch.map(scrapeOne));
       pages.push(
         ...settled

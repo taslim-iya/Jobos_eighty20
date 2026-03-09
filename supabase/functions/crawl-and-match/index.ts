@@ -119,7 +119,17 @@ Deno.serve(async (req) => {
             stage: "saved",
             match_score: 0,
           });
-          if (!error) inserted++;
+
+          if (error) {
+            console.warn("Job insert failed", {
+              source_id: source.id,
+              source_job_url: job.source_job_url,
+              message: error.message,
+            });
+            continue;
+          }
+
+          inserted++;
         }
         totalInserted += inserted;
 
@@ -180,26 +190,61 @@ async function crawlSource(source: any, firecrawlKey: string | undefined): Promi
   }
 
   if (source.crawl_type === "sitemap") {
-    const resp = await fetch(endpoint, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ url: source.base_url, limit: 60 }),
-    });
-    const data = await resp.json();
-    const urls = (data?.links || []).filter((u: string) => {
+    // NOTE: Some modern sites (like Trackr) render opportunities client-side.
+    // Firecrawl "map" can miss those links, so we scrape the page for links first,
+    // then follow a bounded subset of internal URLs.
+
+    const baseHost = new URL(source.base_url).hostname.replace(/^www\./, "");
+
+    const filterAllowlist = (u: string) => {
       if (source.allowlist_paths?.length > 0) {
         return source.allowlist_paths.some((p: string) => u.includes(p));
       }
       return true;
-    }).slice(0, 5); // keep edge runtime fast and reliable
+    };
 
-    // Scrape in parallel (bounded) to avoid request timeouts
-    const scrapePromises = urls.map(async (url: string) => {
+    const linksResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: source.base_url,
+        formats: ["links"],
+        onlyMainContent: false,
+        waitFor: 6000,
+      }),
+    });
+
+    const linksJson = await linksResp.json();
+    const scrapedLinks = (linksJson?.data?.links || linksJson?.links || []) as string[];
+
+    const links = scrapedLinks
+      .filter((u) => {
+        try {
+          return new URL(u).hostname.replace(/^www\./, "") === baseHost;
+        } catch {
+          return false;
+        }
+      })
+      .filter(filterAllowlist);
+
+    // Prioritize likely job/programme pages first, then take a tight bounded sample (keeps runtime fast)
+    const prioritized = links
+      .filter((u: string) => /\/programme\/|\/company\/|internship|graduate|summer/i.test(u))
+      .concat(links)
+      .filter((u: string, i: number, arr: string[]) => arr.indexOf(u) === i)
+      .slice(0, 8);
+
+    const scrapeOne = async (url: string) => {
       try {
         const r = await fetch("https://api.firecrawl.dev/v1/scrape", {
           method: "POST",
           headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ url, formats: ["markdown"], onlyMainContent: true }),
+          body: JSON.stringify({
+            url,
+            formats: ["markdown"],
+            onlyMainContent: true,
+            waitFor: 4000,
+          }),
         });
         const d = await r.json();
         if (d?.data?.markdown) return { url, markdown: d.data.markdown };
@@ -207,12 +252,21 @@ async function crawlSource(source: any, firecrawlKey: string | undefined): Promi
         // skip failed pages
       }
       return null;
-    });
+    };
 
-    const settled = await Promise.allSettled(scrapePromises);
-    return settled
-      .filter((s): s is PromiseFulfilledResult<any> => s.status === "fulfilled" && !!s.value)
-      .map((s) => s.value);
+    // Scrape in bounded batches to keep the edge runtime reliable
+    const pages: any[] = [];
+    for (let i = 0; i < prioritized.length; i += 2) {
+      const batch = prioritized.slice(i, i + 2);
+      const settled = await Promise.allSettled(batch.map(scrapeOne));
+      pages.push(
+        ...settled
+          .filter((s): s is PromiseFulfilledResult<any> => s.status === "fulfilled" && !!s.value)
+          .map((s) => s.value),
+      );
+    }
+
+    return pages;
   }
 
   // Default: crawl
@@ -267,8 +321,8 @@ async function extractJobsFromPages(pages: any[], source: any): Promise<any[]> {
 
     // Check for job listing signals
     const text = page.markdown.toLowerCase();
-    const isJobPage = /apply|application|position|vacancy|career|hiring|job description|responsibilities|qualifications|requirements/i.test(text);
-    if (!isJobPage) continue;
+    const urlHint = /\/programme\/|\/company\//i.test(page.url);
+    const isJobPage = urlHint || /apply|application|position|vacancy|career|hiring|job description|responsibilities|qualifications|requirements/i.test(text);
 
     // Simple extraction without AI to keep it fast
     const titleMatch = page.markdown.match(/^#\s+(.+)/m);

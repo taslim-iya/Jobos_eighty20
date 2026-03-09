@@ -185,14 +185,53 @@ async function crawlSource(source: any, firecrawlKey: string | undefined): Promi
       headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({ url: source.base_url, limit: 60 }),
     });
-    const data = await resp.json();
+    const mapJson = await resp.json();
 
-    const links = (data?.links || []).filter((u: string) => {
+    const baseHost = new URL(source.base_url).hostname.replace(/^www\./, "");
+
+    const filterAllowlist = (u: string) => {
       if (source.allowlist_paths?.length > 0) {
         return source.allowlist_paths.some((p: string) => u.includes(p));
       }
       return true;
-    });
+    };
+
+    // Firecrawl map sometimes misses JS-rendered links; fall back to scraping links from the page.
+    const mapLinks = (mapJson?.links || mapJson?.data?.links || [])
+      .filter((u: string) => {
+        try {
+          return new URL(u).hostname.replace(/^www\./, "") === baseHost;
+        } catch {
+          return false;
+        }
+      })
+      .filter(filterAllowlist);
+
+    let links: string[] = mapLinks;
+
+    if (links.length < 5) {
+      const scrapeResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: source.base_url,
+          formats: ["links"],
+          onlyMainContent: false,
+          waitFor: 12000,
+        }),
+      });
+      const scrapeJson = await scrapeResp.json();
+      const scrapeLinks = (scrapeJson?.data?.links || scrapeJson?.links || []) as string[];
+      links = scrapeLinks
+        .filter((u) => {
+          try {
+            return new URL(u).hostname.replace(/^www\./, "") === baseHost;
+          } catch {
+            return false;
+          }
+        })
+        .filter(filterAllowlist);
+    }
 
     // Prioritize likely job/programme pages first, then take a bounded sample.
     // (Trackr-style pages often surface opportunities via /programme/* and /company/* routes.)

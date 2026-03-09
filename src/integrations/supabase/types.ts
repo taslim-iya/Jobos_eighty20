@@ -80,6 +80,53 @@ export type Database = {
         }
         Relationships: []
       }
+      application_queue: {
+        Row: {
+          ai_answers: Json | null
+          applied_at: string | null
+          cover_letter: string | null
+          created_at: string
+          id: string
+          job_id: string | null
+          notes: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ai_answers?: Json | null
+          applied_at?: string | null
+          cover_letter?: string | null
+          created_at?: string
+          id?: string
+          job_id?: string | null
+          notes?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ai_answers?: Json | null
+          applied_at?: string | null
+          cover_letter?: string | null
+          created_at?: string
+          id?: string
+          job_id?: string | null
+          notes?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "application_queue_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contacts: {
         Row: {
           channel: string | null

@@ -290,8 +290,8 @@ async function extractJobsFromPages(pages: any[], source: any): Promise<any[]> {
 
     // Check for job listing signals
     const text = page.markdown.toLowerCase();
-    const isJobPage = /apply|application|position|vacancy|career|hiring|job description|responsibilities|qualifications|requirements/i.test(text);
-    if (!isJobPage) continue;
+    const urlHint = /\/programme\/|\/company\//i.test(page.url);
+    const isJobPage = urlHint || /apply|application|position|vacancy|career|hiring|job description|responsibilities|qualifications|requirements/i.test(text);
 
     // Simple extraction without AI to keep it fast
     const titleMatch = page.markdown.match(/^#\s+(.+)/m);

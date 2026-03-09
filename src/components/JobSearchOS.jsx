@@ -4177,6 +4177,41 @@ function Extension() {
 
       <div className="alert a-gold mb20">🚀 <strong>Queue → Generate → Apply.</strong> Add jobs to your queue, generate AI-tailored cover letters and form answers, then apply with confidence.</div>
 
+      {/* Chrome Extension Setup */}
+      <div className="card mb20" style={{padding:0,overflow:"hidden"}}>
+        <div style={{padding:"20px 24px",borderBottom:"1px solid var(--border2)",display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:36,height:36,background:"linear-gradient(135deg, var(--gold), var(--gold3))",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:14}}>⚡</div>
+          <div>
+            <div className="fw6 fs14" style={{color:"var(--ink)"}}>Chrome Extension — Auto-Fill</div>
+            <div className="fs11 t-ink4">Auto-fill job application forms with your profile data</div>
+          </div>
+        </div>
+        <div style={{padding:"16px 24px"}}>
+          <div className="grid g3 g12" style={{marginBottom:16}}>
+            <div style={{background:"var(--surface2)",padding:"14px 16px",borderRadius:8}}>
+              <div className="fw6 fs12 mb4" style={{color:"var(--gold)"}}>Step 1</div>
+              <div className="fs12 t-ink2">Download the <code style={{background:"var(--surface3)",padding:"1px 6px",borderRadius:4,fontSize:11}}>chrome-extension/</code> folder from this project</div>
+            </div>
+            <div style={{background:"var(--surface2)",padding:"14px 16px",borderRadius:8}}>
+              <div className="fw6 fs12 mb4" style={{color:"var(--gold)"}}>Step 2</div>
+              <div className="fs12 t-ink2">Go to <code style={{background:"var(--surface3)",padding:"1px 6px",borderRadius:4,fontSize:11}}>chrome://extensions</code> → Enable Developer Mode → Load Unpacked</div>
+            </div>
+            <div style={{background:"var(--surface2)",padding:"14px 16px",borderRadius:8}}>
+              <div className="fw6 fs12 mb4" style={{color:"var(--gold)"}}>Step 3</div>
+              <div className="fs12 t-ink2">Open the extension popup, paste your auth token, and connect to start auto-filling forms</div>
+            </div>
+          </div>
+          <div className="flex g8" style={{alignItems:"center"}}>
+            <span className="tag t-blue" style={{fontSize:10}}>Greenhouse</span>
+            <span className="tag t-blue" style={{fontSize:10}}>Lever</span>
+            <span className="tag t-blue" style={{fontSize:10}}>Workday</span>
+            <span className="tag t-blue" style={{fontSize:10}}>LinkedIn</span>
+            <span className="tag t-blue" style={{fontSize:10}}>SmartRecruiters</span>
+            <span className="tag t-ink4" style={{fontSize:10}}>+ any site</span>
+          </div>
+        </div>
+      </div>
+
       {/* Status tabs */}
       <div className="flex g8 mb20" style={{borderBottom:"1px solid var(--border2)",paddingBottom:12}}>
         {[["queued","📋 Queued"],["ready","✅ Ready"],["applied","🎯 Applied"],["all","📊 All"]].map(([key,label])=>(

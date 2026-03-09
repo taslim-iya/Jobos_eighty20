@@ -1182,6 +1182,43 @@ const PLAYBOOKS = {
         { q:"How do you build alignment with engineering on a contentious roadmap?", cat:"Leadership", diff:"Advanced" },
       ],
     }
+  },
+  postgrad: {
+    icon: "🎓", name: "Post-Graduate Path",
+    undergrad: {
+      process: "Graduate Scheme → Rotational Program → Specialist Role",
+      prereqs: ["Strong academic record", "Extra-curricular leadership", "Sector interest clarity", "Networking foundation"],
+      milestones: [
+        { week:"WK 1–2", title:"Self-Assessment", desc:"Clarify career goals, target sectors, and scheme preferences. Map top 20 graduate programs." },
+        { week:"WK 3–4", title:"Application Prep", desc:"Tailor CV for grad schemes. Draft competency-based answers using STAR. Research firm values." },
+        { week:"WK 5–6", title:"Psychometric & Online Tests", desc:"Practice SHL, Korn Ferry, and Watson Glaser tests. Complete 10 practice situational judgements." },
+        { week:"WK 7–8", title:"Assessment Centre Prep", desc:"Group exercise practice. E-tray simulations. Presentation skills." },
+        { week:"WK 9–10", title:"Application Sprint", desc:"Submit top 15 graduate schemes. Track deadlines. Follow up with campus teams." },
+        { week:"WK 11–12", title:"Final Rounds", desc:"Partner/VP interviews. Commercial awareness deep-dives. Salary negotiation prep." },
+      ],
+      questions: [
+        { q:"Why have you chosen this graduate scheme?", cat:"Motivation", diff:"Core" },
+        { q:"Tell me about a time you worked in a team to achieve a goal.", cat:"Competency", diff:"Core" },
+        { q:"Where do you see yourself in 5 years?", cat:"Behavioral", diff:"Core" },
+        { q:"Walk me through a current issue facing our industry.", cat:"Commercial Awareness", diff:"Advanced" },
+        { q:"Describe a time you showed leadership without formal authority.", cat:"Competency", diff:"Advanced" },
+      ],
+    },
+    experienced: {
+      process: "MBA / Masters → Career Switch → Senior Role",
+      prereqs: ["2–5 yrs work experience", "Clear pivot narrative", "GMAT/GRE (for MBA)", "Target program shortlist"],
+      milestones: [
+        { week:"WK 1–2", title:"Program Research", desc:"Shortlist programs by career outcome data. Connect with alumni for insights." },
+        { week:"WK 3–4", title:"Application Essays", desc:"Draft 'Why MBA/Masters' and career goals essays. Get feedback from admissions consultants." },
+        { week:"WK 5–6", title:"Interview Prep", desc:"Practice behavioral + 'walk me through your CV' narratives. Mock admissions interviews." },
+        { week:"WK 7+", title:"Career Pivot Planning", desc:"Build recruiter relationships at target firms. Attend career treks and industry panels." },
+      ],
+      questions: [
+        { q:"Walk me through your career journey and why you're pursuing further education now.", cat:"Motivation", diff:"Core" },
+        { q:"How will this program help you achieve your goals?", cat:"Fit", diff:"Core" },
+        { q:"What unique perspective do you bring to the cohort?", cat:"Behavioral", diff:"Advanced" },
+      ],
+    }
   }
 };
 

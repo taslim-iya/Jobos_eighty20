@@ -4968,6 +4968,7 @@ export default function JobSearchOS() {
           location: j.location,
           description: j.description,
           source: j.source,
+          source_id: j.source_id,
           url: j.url,
         })));
       }

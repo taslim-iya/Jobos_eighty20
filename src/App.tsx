@@ -8,6 +8,7 @@ import HomePage from "./pages/HomePage";
 import Index from "./pages/Index";
 import AuthPage from "./pages/AuthPage";
 import ResetPassword from "./pages/ResetPassword";
+import OutboundRedirect from "./pages/OutboundRedirect";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -24,6 +25,7 @@ const App = () => (
             <Route path="/dashboard" element={<Index />} />
             <Route path="/auth" element={<AuthPage />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/out" element={<OutboundRedirect />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>

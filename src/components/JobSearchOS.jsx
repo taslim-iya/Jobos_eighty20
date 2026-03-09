@@ -81,7 +81,7 @@ body {
 
 .sidebar {
   width: 240px;
-  min-height: 100vh;
+  height: 100vh;
   background: var(--side-bg);
   position: fixed;
   left: 0; top: 0;
@@ -89,6 +89,8 @@ body {
   flex-direction: column;
   z-index: 100;
   border-right: 1px solid var(--border2);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .main {
@@ -1180,6 +1182,43 @@ const PLAYBOOKS = {
         { q:"How do you build alignment with engineering on a contentious roadmap?", cat:"Leadership", diff:"Advanced" },
       ],
     }
+  },
+  postgrad: {
+    icon: "🎓", name: "Post-Graduate Path",
+    undergrad: {
+      process: "Graduate Scheme → Rotational Program → Specialist Role",
+      prereqs: ["Strong academic record", "Extra-curricular leadership", "Sector interest clarity", "Networking foundation"],
+      milestones: [
+        { week:"WK 1–2", title:"Self-Assessment", desc:"Clarify career goals, target sectors, and scheme preferences. Map top 20 graduate programs." },
+        { week:"WK 3–4", title:"Application Prep", desc:"Tailor CV for grad schemes. Draft competency-based answers using STAR. Research firm values." },
+        { week:"WK 5–6", title:"Psychometric & Online Tests", desc:"Practice SHL, Korn Ferry, and Watson Glaser tests. Complete 10 practice situational judgements." },
+        { week:"WK 7–8", title:"Assessment Centre Prep", desc:"Group exercise practice. E-tray simulations. Presentation skills." },
+        { week:"WK 9–10", title:"Application Sprint", desc:"Submit top 15 graduate schemes. Track deadlines. Follow up with campus teams." },
+        { week:"WK 11–12", title:"Final Rounds", desc:"Partner/VP interviews. Commercial awareness deep-dives. Salary negotiation prep." },
+      ],
+      questions: [
+        { q:"Why have you chosen this graduate scheme?", cat:"Motivation", diff:"Core" },
+        { q:"Tell me about a time you worked in a team to achieve a goal.", cat:"Competency", diff:"Core" },
+        { q:"Where do you see yourself in 5 years?", cat:"Behavioral", diff:"Core" },
+        { q:"Walk me through a current issue facing our industry.", cat:"Commercial Awareness", diff:"Advanced" },
+        { q:"Describe a time you showed leadership without formal authority.", cat:"Competency", diff:"Advanced" },
+      ],
+    },
+    experienced: {
+      process: "MBA / Masters → Career Switch → Senior Role",
+      prereqs: ["2–5 yrs work experience", "Clear pivot narrative", "GMAT/GRE (for MBA)", "Target program shortlist"],
+      milestones: [
+        { week:"WK 1–2", title:"Program Research", desc:"Shortlist programs by career outcome data. Connect with alumni for insights." },
+        { week:"WK 3–4", title:"Application Essays", desc:"Draft 'Why MBA/Masters' and career goals essays. Get feedback from admissions consultants." },
+        { week:"WK 5–6", title:"Interview Prep", desc:"Practice behavioral + 'walk me through your CV' narratives. Mock admissions interviews." },
+        { week:"WK 7+", title:"Career Pivot Planning", desc:"Build recruiter relationships at target firms. Attend career treks and industry panels." },
+      ],
+      questions: [
+        { q:"Walk me through your career journey and why you're pursuing further education now.", cat:"Motivation", diff:"Core" },
+        { q:"How will this program help you achieve your goals?", cat:"Fit", diff:"Core" },
+        { q:"What unique perspective do you bring to the cohort?", cat:"Behavioral", diff:"Advanced" },
+      ],
+    }
   }
 };
 
@@ -1302,6 +1341,9 @@ const NAV = [
   { section: "Apply", items: [
     { id:"extension",  icon:"🚀", label:"Auto Apply" },
   ]},
+  { section: "Account", items: [
+    { id:"profile",    icon:"👤", label:"My Profile" },
+  ]},
   { section: "Admin", items: [
     { id:"admin", icon:"⚙️", label:"Admin Console" },
     { id:"websites",  icon:"🌐", label:"Website Manager" },
@@ -1315,7 +1357,7 @@ function Dashboard({ jobs, profile }) {
   return (
     <div className="page">
       <div className="hero">
-        <div className="hero-eye">{profile.track === "ib" ? "IB" : profile.track === "consulting" ? "Consulting" : "Product"} Track · {profile.level === "undergrad" ? "Undergraduate" : "Experienced Hire"}</div>
+        <div className="hero-eye">{profile.track === "ib" ? "IB" : profile.track === "consulting" ? "Consulting" : profile.track === "postgrad" ? "Post-Grad" : "Product"} Track · {profile.level === "undergrad" ? "Undergraduate" : "Experienced Hire"}</div>
         <div className="hero-h">Welcome back, {profile.name.split(" ")[0]}.<br/>{jobs.filter(j=>j.stage!=="saved"&&j.stage!=="offer").length > 0 ? `You have ${jobs.filter(j=>j.stage!=="saved"&&j.stage!=="offer").length} active applications.` : "Start by discovering roles."}</div>
         <div className="hero-p">{jobs.filter(j=>j.stage==="interviewing").length > 0 ? `${jobs.filter(j=>j.stage==="interviewing").length} interview(s) in progress. Focus on preparation.` : jobs.length > 0 ? "Keep building your pipeline and preparing for interviews." : "Use Job Discovery to find and save roles to your pipeline."}</div>
         <div className="hero-actions">
@@ -4126,6 +4168,178 @@ Format with clear headers.`;
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
+   PAGE: MY PROFILE
+══════════════════════════════════════════════════════════════════════════════ */
+function MyProfile() {
+  const { user } = useAuth();
+  const [p, setP] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const cvRef = useRef(null);
+  const clRef = useRef(null);
+
+  useEffect(() => {
+    if (!user) return;
+    supabase.from("profiles").select("*").eq("user_id", user.id).single().then(({ data }) => {
+      if (data) setP(data);
+    });
+  }, [user]);
+
+  const save = async () => {
+    if (!p || !user) return;
+    setSaving(true);
+    setSaved(false);
+    const { error } = await supabase.from("profiles").update({
+      display_name: p.display_name,
+      university: p.university,
+      gpa: p.gpa,
+      graduation_year: p.graduation_year,
+      target_track: p.target_track,
+      experience_level: p.experience_level,
+      location: p.location,
+      visa_status: p.visa_status,
+      start_date: p.start_date,
+      salary_min: p.salary_min ? parseInt(p.salary_min) : null,
+      skills: p.skills || [],
+      industries: p.industries || [],
+      locations: p.locations || [],
+      keywords_include: p.keywords_include || [],
+      keywords_exclude: p.keywords_exclude || [],
+      company_blacklist: p.company_blacklist || [],
+    }).eq("user_id", user.id);
+    setSaving(false);
+    if (!error) { setSaved(true); setTimeout(() => setSaved(false), 3000); }
+  };
+
+  const handleFileUpload = async (e, type) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+    setUploading(true);
+    const ext = file.name.split(".").pop();
+    const path = `${user.id}/${type}_${Date.now()}.${ext}`;
+    const { error } = await supabase.storage.from("documents").upload(path, file, { upsert: true });
+    if (!error) {
+      await supabase.from("documents").insert({
+        user_id: user.id,
+        filename: file.name,
+        file_path: path,
+        file_type: ext,
+        file_size: file.size,
+        doc_category: type === "cv" ? "CV" : "Cover Letter",
+      });
+      alert(`✅ ${type === "cv" ? "CV" : "Cover Letter"} uploaded successfully!`);
+    }
+    setUploading(false);
+    e.target.value = "";
+  };
+
+  const update = (field, value) => setP(prev => ({ ...prev, [field]: value }));
+  const updateArray = (field, value) => setP(prev => ({ ...prev, [field]: value.split(",").map(s => s.trim()).filter(Boolean) }));
+
+  if (!p) return <div className="page"><div className="ai-pulse"><div className="dot-spin"/>Loading profile...</div></div>;
+
+  return (
+    <div className="page">
+      <input type="file" ref={cvRef} style={{display:"none"}} accept=".pdf,.docx,.doc,.txt" onChange={e=>handleFileUpload(e,"cv")}/>
+      <input type="file" ref={clRef} style={{display:"none"}} accept=".pdf,.docx,.doc,.txt" onChange={e=>handleFileUpload(e,"cover_letter")}/>
+      <div className="section-header">
+        <div><div className="eyebrow">Account</div><div className="section-title">My Profile</div></div>
+        <div className="flex g8">
+          {saved && <span className="tag t-green">✓ Saved</span>}
+          <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>{saving ? "Saving..." : "💾 Save Profile"}</button>
+        </div>
+      </div>
+
+      <div className="alert a-gold mb20">👤 Keep your profile up to date — it powers auto-fill, cover letter generation, job matching, and interview prep.</div>
+
+      <div className="grid g2 g16 mb24">
+        {/* Personal Info */}
+        <div className="card">
+          <div className="card-header"><div className="card-title">Personal Information</div></div>
+          <div className="grid g2 g12 mb12">
+            <div className="fg"><label className="label">Full Name</label><input className="input" value={p.display_name||""} onChange={e=>update("display_name",e.target.value)} placeholder="John Smith"/></div>
+            <div className="fg"><label className="label">Email</label><input className="input" value={p.email||""} disabled style={{opacity:0.6}}/></div>
+          </div>
+          <div className="grid g2 g12 mb12">
+            <div className="fg"><label className="label">Location</label><input className="input" value={p.location||""} onChange={e=>update("location",e.target.value)} placeholder="London"/></div>
+            <div className="fg"><label className="label">Visa Status</label><input className="input" value={p.visa_status||""} onChange={e=>update("visa_status",e.target.value)} placeholder="UK Citizen / Tier 2 / etc."/></div>
+          </div>
+          <div className="grid g2 g12">
+            <div className="fg"><label className="label">Start Date Availability</label><input className="input" value={p.start_date||""} onChange={e=>update("start_date",e.target.value)} placeholder="Immediately / Sep 2026"/></div>
+            <div className="fg"><label className="label">Minimum Salary</label><input className="input" type="number" value={p.salary_min||""} onChange={e=>update("salary_min",e.target.value)} placeholder="50000"/></div>
+          </div>
+        </div>
+
+        {/* Education & Career */}
+        <div className="card">
+          <div className="card-header"><div className="card-title">Education & Career Track</div></div>
+          <div className="grid g2 g12 mb12">
+            <div className="fg"><label className="label">University</label><input className="input" value={p.university||""} onChange={e=>update("university",e.target.value)} placeholder="LSE / Oxford / etc."/></div>
+            <div className="fg"><label className="label">GPA</label><input className="input" value={p.gpa||""} onChange={e=>update("gpa",e.target.value)} placeholder="3.8 / First Class"/></div>
+          </div>
+          <div className="grid g2 g12 mb12">
+            <div className="fg"><label className="label">Graduation Year</label><input className="input" value={p.graduation_year||""} onChange={e=>update("graduation_year",e.target.value)} placeholder="2026"/></div>
+            <div className="fg"><label className="label">Target Track</label>
+              <select className="input" value={p.target_track||"ib"} onChange={e=>update("target_track",e.target.value)}>
+                <option value="ib">Investment Banking</option>
+                <option value="consulting">Consulting</option>
+                <option value="product">Product & Tech</option>
+                <option value="postgrad">Post-Graduate Path</option>
+              </select>
+            </div>
+          </div>
+          <div className="fg">
+            <label className="label">Experience Level</label>
+            <select className="input" value={p.experience_level||"undergrad"} onChange={e=>update("experience_level",e.target.value)}>
+              <option value="undergrad">Undergraduate / Entry-Level</option>
+              <option value="experienced">Experienced Hire</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid g2 g16 mb24">
+        {/* Skills & Preferences */}
+        <div className="card">
+          <div className="card-header"><div className="card-title">Skills & Preferences</div></div>
+          <div className="fg mb12"><label className="label">Skills <span className="t-ink4 fs11">(comma-separated)</span></label><input className="input" value={(p.skills||[]).join(", ")} onChange={e=>updateArray("skills",e.target.value)} placeholder="Financial Modeling, Python, SQL"/></div>
+          <div className="fg mb12"><label className="label">Target Industries</label><input className="input" value={(p.industries||[]).join(", ")} onChange={e=>updateArray("industries",e.target.value)} placeholder="Banking, Tech, Consulting"/></div>
+          <div className="fg mb12"><label className="label">Preferred Locations</label><input className="input" value={(p.locations||[]).join(", ")} onChange={e=>updateArray("locations",e.target.value)} placeholder="London, New York, Hong Kong"/></div>
+          <div className="fg mb12"><label className="label">Include Keywords</label><input className="input" value={(p.keywords_include||[]).join(", ")} onChange={e=>updateArray("keywords_include",e.target.value)} placeholder="M&A, Strategy, Product"/></div>
+          <div className="fg mb12"><label className="label">Exclude Keywords</label><input className="input" value={(p.keywords_exclude||[]).join(", ")} onChange={e=>updateArray("keywords_exclude",e.target.value)} placeholder="Unpaid, Volunteer"/></div>
+          <div className="fg"><label className="label">Company Blacklist</label><input className="input" value={(p.company_blacklist||[]).join(", ")} onChange={e=>updateArray("company_blacklist",e.target.value)} placeholder="Company A, Company B"/></div>
+        </div>
+
+        {/* Document Uploads */}
+        <div className="card">
+          <div className="card-header"><div className="card-title">Documents</div></div>
+          <div className="alert a-blue mb16">📄 Upload your CV and cover letters here. They'll be used for AI auto-fill, cover letter generation, and interview prep.</div>
+          <div className="flex g12 mb16" style={{flexWrap:"wrap"}}>
+            <button className="btn btn-primary btn-sm" onClick={()=>cvRef.current?.click()} disabled={uploading}>
+              {uploading ? "Uploading..." : "📤 Upload CV"}
+            </button>
+            <button className="btn btn-outline btn-sm" onClick={()=>clRef.current?.click()} disabled={uploading}>
+              📤 Upload Cover Letter
+            </button>
+          </div>
+          <div className="fs11 t-ink4 mb12">Accepted formats: PDF, DOCX, DOC, TXT</div>
+
+          {p.cv_text && (
+            <div style={{background:"var(--surface2)",border:"1px solid var(--border2)",borderRadius:8,padding:"12px 14px",marginTop:12}}>
+              <div className="fw6 fs12 mb4" style={{color:"var(--ink)"}}>📄 CV Text Preview</div>
+              <div className="fs11 t-ink3" style={{maxHeight:120,overflowY:"auto",whiteSpace:"pre-wrap",lineHeight:1.6}}>
+                {(p.cv_text || "").slice(0, 500)}{(p.cv_text||"").length > 500 ? "..." : ""}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
    PAGE: OUTREACH
 ══════════════════════════════════════════════════════════════════════════════ */
 const OUTREACH_DATA = [];
@@ -5224,7 +5438,7 @@ const PAGE_TITLES = {
   dashboard:"Dashboard", recommended:"Recommended Jobs", discover:"Job Discovery", explore:"Explore Jobs",
   websites:"Website Manager", pipeline:"CRM", playbooks:"Playbooks",
   cv:"CV + Cover Letters", interview:"Interview Prep",
-  extension:"Auto Apply", admin:"Admin Console",
+  extension:"Auto Apply", profile:"My Profile", admin:"Admin Console",
 };
 
 export default function JobSearchOS() {
@@ -5295,6 +5509,7 @@ export default function JobSearchOS() {
       case "cv":           return <CVStudio jobs={jobs}/>;
       case "interview":    return <Interview/>;
       case "extension":    return <Extension/>;
+      case "profile":      return <MyProfile/>;
       case "admin":        return <Admin/>;
       default: return (
         <div className="page">
@@ -5363,7 +5578,7 @@ export default function JobSearchOS() {
               <div className="avatar">{profile.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}</div>
               <div>
                 <div className="user-name">{profile.name}</div>
-                <div className="user-meta">{profile.track === "ib" ? "IB" : profile.track === "consulting" ? "Consulting" : "Product"} · {profile.level === "undergrad" ? "Undergrad" : "Experienced"}</div>
+                <div className="user-meta">{profile.track === "ib" ? "IB" : profile.track === "consulting" ? "Consulting" : profile.track === "postgrad" ? "Post-Grad" : "Product"} · {profile.level === "undergrad" ? "Undergrad" : "Experienced"}</div>
               </div>
             </div>
           </div>

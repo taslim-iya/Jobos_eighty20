@@ -36,7 +36,7 @@
     .stat-label { font-size: 10px; color: #999; margin-top: 2px; }
     .page-info { background: rgba(0,87,155,0.06); border-radius: 6px; padding: 10px; margin-bottom: 12px; font-size: 11px; color: #333; }
     .page-info strong { color: #00579B; }
-    .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #E0DFDA; margin-bottom: 8px; }
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #E0DFDA; }
     .toggle-label { font-size: 11px; font-weight: 500; color: #333; }
     .toggle { position: relative; width: 36px; height: 20px; }
     .toggle input { opacity: 0; width: 0; height: 0; }
@@ -47,13 +47,14 @@
     #login-view, #connected-view, #loading-view { display: none; }
     .active-view { display: block !important; }
     .platform-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; background: rgba(0,87,155,0.1); color: #00579B; margin-left: 8px; }
+    .toggles-section { margin-bottom: 12px; }
   </style>
 </head>
 <body>
   <div class="header">
     <div class="logo">JS</div>
     <h1>JobSearchOS</h1>
-    <span class="version">v1.0</span>
+    <span class="version">v1.1</span>
   </div>
 
   <div id="loading-view" class="content active-view">
@@ -86,12 +87,21 @@
       <span id="detected-job-title"></span>
     </div>
 
-    <div class="toggle-row">
-      <span class="toggle-label">⚡ Auto-fill on page load</span>
-      <label class="toggle">
-        <input type="checkbox" id="auto-fill-toggle">
-        <span class="slider"></span>
-      </label>
+    <div class="toggles-section">
+      <div class="toggle-row">
+        <span class="toggle-label">⚡ Auto-fill on page load</span>
+        <label class="toggle">
+          <input type="checkbox" id="auto-fill-toggle">
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="toggle-row" style="border-bottom:none;">
+        <span class="toggle-label">🧠 Learn from manual entries</span>
+        <label class="toggle">
+          <input type="checkbox" id="learn-toggle">
+          <span class="slider"></span>
+        </label>
+      </div>
     </div>
 
     <div class="stats">

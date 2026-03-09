@@ -16,32 +16,49 @@ Deno.serve(async (req) => {
   const firecrawlKey = Deno.env.get("FIRECRAWL_API_KEY");
   const supabase = createClient(supabaseUrl, serviceKey);
 
-  // Optionally verify admin
+  // Require an authenticated user (jobs.user_id has a foreign-key constraint)
   const authHeader = req.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) {
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
+  if (!authHeader?.startsWith("Bearer ")) {
+    return new Response(JSON.stringify({ error: "Authentication required" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-    const { data: { user }, error: userErr } = await userClient.auth.getUser();
-    if (!userErr && user?.id) {
-      const { data: roleData } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", user.id)
-        .eq("role", "admin")
-        .maybeSingle();
-      if (!roleData) {
-        return new Response(JSON.stringify({ error: "Admin access required" }), {
-          status: 403,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-    }
   }
+
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+  const userClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
+
+  const { data: { user }, error: userErr } = await userClient.auth.getUser();
+  if (userErr || !user?.id) {
+    return new Response(JSON.stringify({ error: "Invalid session" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const requesterUserId = user.id;
+
+  // Admins can crawl all sources; non-admins must pass a source_id or paste_url
+  const { data: roleData } = await supabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", requesterUserId)
+    .eq("role", "admin")
+    .maybeSingle();
+
+  const isAdmin = !!roleData;
 
   const body = await req.json().catch(() => ({}));
   const { source_id, paste_url } = body;
+
+  if (!isAdmin && !source_id && !paste_url) {
+    return new Response(JSON.stringify({ error: "Admin access required to crawl all sources" }), {
+      status: 403,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   try {
     // ─── MODE 1: Parse a single pasted URL ───
@@ -98,10 +115,10 @@ Deno.serve(async (req) => {
         let inserted = 0;
         for (const job of extractedJobs) {
           const hash = await hashText(job.source_job_url || job.title + job.company);
-          const { error } = await supabase.from("jobs").insert({
-            user_id: "00000000-0000-0000-0000-000000000000", // system placeholder
-            source_id: source.id,
-            source_job_url: job.source_job_url,
+           const { error } = await supabase.from("jobs").insert({
+             user_id: requesterUserId,
+             source_id: source.id,
+             source_job_url: job.source_job_url,
             title: job.title,
             firm: job.company,
             location: job.location || null,
@@ -149,8 +166,8 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ─── Run matching against all profiles ───
-    totalMatches = await runMatching(supabase);
+    // ─── Run matching against this user's profile ───
+    totalMatches = await runMatching(supabase, requesterUserId);
 
     return new Response(
       JSON.stringify({ success: true, jobs_inserted: totalInserted, matches_created: totalMatches, sources_crawled: sources.length }),
@@ -349,7 +366,7 @@ async function extractJobsFromPages(pages: any[], source: any): Promise<any[]> {
 }
 
 // ─── MATCHING ENGINE ───
-async function runMatching(supabase: any): Promise<number> {
+async function runMatching(supabase: any, userId: string): Promise<number> {
   // Get match config
   const { data: ruleData } = await supabase
     .from("admin_rules")
@@ -363,15 +380,20 @@ async function runMatching(supabase: any): Promise<number> {
   const weights = config.weights || {};
   const seniorityMap = config.seniority_mappings || {};
 
-  // Get all profiles
-  const { data: profiles } = await supabase.from("profiles").select("*");
+  // Get this user's profile
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("user_id", userId);
+
   if (!profiles?.length) return 0;
 
-  // Get recent jobs (last 7 days) that haven't been matched yet
+  // Get recent jobs (last 7 days) for this user that haven't been matched yet
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const { data: recentJobs } = await supabase
     .from("jobs")
     .select("*")
+    .eq("user_id", userId)
     .gte("created_at", weekAgo)
     .order("created_at", { ascending: false })
     .limit(60);

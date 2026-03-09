@@ -383,14 +383,30 @@ async function extractJobsFromPages(pages: any[], source: any): Promise<any[]> {
   const jobs: any[] = [];
 
   for (const page of pages) {
+    // If this page has AI-extracted structured data, use it directly
+    if (page._aiExtracted) {
+      const j = page._aiExtracted;
+      jobs.push({
+        title: j.title || "Unknown Role",
+        company: j.company || source.name,
+        description: `${j.title} at ${j.company}. Track: ${j.track || "N/A"}. Status: ${j.status || "N/A"}. Deadline: ${j.deadline || "N/A"}.`,
+        source_job_url: page.url,
+        apply_url: page.url,
+        location: j.location || null,
+        remote_flag: /remote|hybrid/i.test(j.location || ""),
+        seniority: /intern|graduate|entry|summer|spring/i.test(j.title || "") ? "undergrad" : /senior|director|vp|manager/i.test(j.title || "") ? "experienced" : null,
+        track: j.track ? (/ib|investment.bank|m&a|ecm|dcm/i.test(j.track) ? "ib" : /consult|strategy/i.test(j.track) ? "consulting" : /asset.manag|am/i.test(j.track) ? "am" : /product/i.test(j.track) ? "product" : j.track.toLowerCase()) : null,
+        tags: [j.status || "open"],
+        posted_at: null,
+        deadline: j.deadline || null,
+        extracted_json: { source_url: page.url, extracted_at: new Date().toISOString(), ai_extracted: true },
+      });
+      continue;
+    }
+
     if (!page.markdown || page.markdown.length < 100) continue;
 
-    // Check for job listing signals
     const text = page.markdown.toLowerCase();
-    const urlHint = /\/programme\/|\/company\//i.test(page.url);
-    const isJobPage = urlHint || /apply|application|position|vacancy|career|hiring|job description|responsibilities|qualifications|requirements/i.test(text);
-
-    // Simple extraction without AI to keep it fast
     const titleMatch = page.markdown.match(/^#\s+(.+)/m);
     const title = titleMatch ? titleMatch[1].trim() : page.markdown.split("\n")[0]?.trim().slice(0, 120) || "Unknown Role";
 

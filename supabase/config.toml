@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.generate-cover-letter]
 verify_jwt = false
+
+[functions.extension-api]
+verify_jwt = false

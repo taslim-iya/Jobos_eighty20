@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 340px; font-family: 'Inter', -apple-system, sans-serif;
+      background: #F5F4F0; color: #0A0A0A; font-size: 13px;
+    }
+    .header {
+      background: #0A0A0A; color: #fff; padding: 16px 20px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .header .logo {
+      width: 28px; height: 28px; background: linear-gradient(135deg, #00579B, #3399D6);
+      border-radius: 6px; display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 11px; color: #fff;
+    }
+    .header h1 { font-size: 14px; font-weight: 600; }
+    .header .version { font-size: 10px; opacity: 0.5; margin-left: auto; }
+
+    .content { padding: 16px 20px; }
+
+    .status-card {
+      background: #fff; border: 1px solid #E0DFDA; border-radius: 8px;
+      padding: 14px; margin-bottom: 12px;
+    }
+    .status-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .dot-green { background: #1A7F5A; }
+    .dot-red { background: #C0392B; }
+    .dot-yellow { background: #D4A017; }
+    .status-text { font-size: 12px; font-weight: 500; }
+
+    .section-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: #999; margin-bottom: 8px; font-weight: 600; }
+
+    .btn {
+      width: 100%; padding: 10px; border: none; border-radius: 6px; cursor: pointer;
+      font-size: 12px; font-weight: 600; transition: all 0.15s;
+    }
+    .btn-primary { background: #00579B; color: #fff; }
+    .btn-primary:hover { background: #004480; }
+    .btn-secondary { background: #fff; color: #0A0A0A; border: 1px solid #E0DFDA; }
+    .btn-secondary:hover { background: #F0EFEB; }
+    .btn-danger { background: #C0392B; color: #fff; }
+    .btn + .btn { margin-top: 8px; }
+
+    .input-group { margin-bottom: 12px; }
+    .input-group label { display: block; font-size: 11px; font-weight: 500; color: #666; margin-bottom: 4px; }
+    .input-group input {
+      width: 100%; padding: 8px 10px; border: 1px solid #E0DFDA; border-radius: 6px;
+      font-size: 12px; background: #fff; outline: none;
+    }
+    .input-group input:focus { border-color: #00579B; }
+
+    .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+    .stat-box {
+      background: #fff; border: 1px solid #E0DFDA; border-radius: 6px; padding: 10px; text-align: center;
+    }
+    .stat-num { font-size: 20px; font-weight: 700; color: #00579B; }
+    .stat-label { font-size: 10px; color: #999; margin-top: 2px; }
+
+    .page-info { background: rgba(0,87,155,0.06); border-radius: 6px; padding: 10px; margin-bottom: 12px; font-size: 11px; color: #333; }
+    .page-info strong { color: #00579B; }
+
+    #login-view, #connected-view, #loading-view { display: none; }
+    .active-view { display: block !important; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">JS</div>
+    <h1>JobSearchOS</h1>
+    <span class="version">v1.0</span>
+  </div>
+
+  <div id="loading-view" class="content active-view">
+    <div class="status-card" style="text-align:center; padding: 24px;">
+      <div style="font-size: 12px; color: #999;">Connecting...</div>
+    </div>
+  </div>
+
+  <div id="login-view" class="content">
+    <div class="section-label">Connect your account</div>
+    <div class="input-group">
+      <label>App URL</label>
+      <input type="text" id="app-url" placeholder="https://your-app.lovable.app" />
+    </div>
+    <div class="input-group">
+      <label>API Token</label>
+      <input type="password" id="api-token" placeholder="Paste your extension token" />
+    </div>
+    <button class="btn btn-primary" id="connect-btn">Connect Account</button>
+    <div id="login-error" style="color: #C0392B; font-size: 11px; margin-top: 8px; display: none;"></div>
+  </div>
+
+  <div id="connected-view" class="content">
+    <div class="status-card">
+      <div class="status-row">
+        <div class="status-dot dot-green"></div>
+        <span class="status-text">Connected as <strong id="user-name"></strong></span>
+      </div>
+    </div>
+
+    <div id="page-detection" class="page-info" style="display:none;">
+      <strong>📋 Application form detected</strong><br>
+      <span id="detected-job-title"></span>
+    </div>
+
+    <div class="stats">
+      <div class="stat-box">
+        <div class="stat-num" id="fields-filled">0</div>
+        <div class="stat-label">Fields Filled</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-num" id="apps-today">0</div>
+        <div class="stat-label">Apps Today</div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="autofill-btn">⚡ Auto-Fill This Page</button>
+    <button class="btn btn-secondary" id="generate-cl-btn">📝 Generate Cover Letter</button>
+    <button class="btn btn-secondary" id="refresh-btn">🔄 Refresh Profile</button>
+    <button class="btn btn-danger" id="disconnect-btn" style="margin-top: 16px;">Disconnect</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

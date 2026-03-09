@@ -391,3 +391,49 @@ export async function fetchCrawlRuns() {
     .limit(50);
   return { data: data || [], error };
 }
+
+// ─── APPLICATION QUEUE ───
+export async function fetchApplicationQueue(userId) {
+  const { data, error } = await supabase
+    .from("application_queue")
+    .select("*, jobs(title, firm, location, track, url, description, experience_level)")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  return { data: data || [], error };
+}
+
+export async function upsertQueueItem(userId, item) {
+  if (item.id) {
+    const { data, error } = await supabase
+      .from("application_queue")
+      .update({
+        status: item.status,
+        cover_letter: item.cover_letter,
+        ai_answers: item.ai_answers,
+        notes: item.notes,
+        applied_at: item.applied_at,
+      })
+      .eq("id", item.id)
+      .eq("user_id", userId)
+      .select()
+      .single();
+    return { data, error };
+  }
+  const { data, error } = await supabase
+    .from("application_queue")
+    .insert({
+      user_id: userId,
+      job_id: item.job_id,
+      status: item.status || "queued",
+      cover_letter: item.cover_letter || null,
+      ai_answers: item.ai_answers || {},
+      notes: item.notes || null,
+    })
+    .select()
+    .single();
+  return { data, error };
+}
+
+export async function deleteQueueItem(userId, itemId) {
+  return supabase.from("application_queue").delete().eq("id", itemId).eq("user_id", userId);
+}

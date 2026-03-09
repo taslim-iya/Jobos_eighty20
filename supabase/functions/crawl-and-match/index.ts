@@ -200,7 +200,7 @@ async function crawlSource(source: any, firecrawlKey: string | undefined): Promi
         url: source.base_url,
         formats: ["links"],
         onlyMainContent: false,
-        waitFor: 12000,
+        waitFor: 6000,
       }),
     });
 
@@ -217,12 +217,12 @@ async function crawlSource(source: any, firecrawlKey: string | undefined): Promi
       })
       .filter(filterAllowlist);
 
-    // Prioritize likely job/programme pages first, then take a bounded sample.
+    // Prioritize likely job/programme pages first, then take a tight bounded sample (keeps runtime fast)
     const prioritized = links
       .filter((u: string) => /\/programme\/|\/company\/|internship|graduate|summer/i.test(u))
       .concat(links)
       .filter((u: string, i: number, arr: string[]) => arr.indexOf(u) === i)
-      .slice(0, 20);
+      .slice(0, 8);
 
     const scrapeOne = async (url: string) => {
       try {
@@ -233,7 +233,7 @@ async function crawlSource(source: any, firecrawlKey: string | undefined): Promi
             url,
             formats: ["markdown"],
             onlyMainContent: true,
-            waitFor: 8000,
+            waitFor: 4000,
           }),
         });
         const d = await r.json();
@@ -246,8 +246,8 @@ async function crawlSource(source: any, firecrawlKey: string | undefined): Promi
 
     // Scrape in bounded batches to keep the edge runtime reliable
     const pages: any[] = [];
-    for (let i = 0; i < prioritized.length; i += 4) {
-      const batch = prioritized.slice(i, i + 4);
+    for (let i = 0; i < prioritized.length; i += 2) {
+      const batch = prioritized.slice(i, i + 2);
       const settled = await Promise.allSettled(batch.map(scrapeOne));
       pages.push(
         ...settled

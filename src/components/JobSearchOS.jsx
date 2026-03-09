@@ -5509,6 +5509,7 @@ export default function JobSearchOS() {
       case "cv":           return <CVStudio jobs={jobs}/>;
       case "interview":    return <Interview/>;
       case "extension":    return <Extension/>;
+      case "profile":      return <MyProfile/>;
       case "admin":        return <Admin/>;
       default: return (
         <div className="page">

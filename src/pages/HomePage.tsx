@@ -39,13 +39,14 @@ const TRACKS = [
   { emoji: "🏦", name: "Investment Banking", color: "bg-navy text-primary-foreground" },
   { emoji: "📈", name: "Consulting", color: "bg-secondary text-secondary-foreground" },
   { emoji: "🚀", name: "Product & Tech", color: "bg-navy-light text-primary-foreground" },
+  { emoji: "🎓", name: "Post-Graduate Path", color: "bg-primary text-primary-foreground" },
 ];
 
 const STATS = [
   { value: "6", label: "Integrated Modules" },
   { value: "AI", label: "Powered Intelligence" },
   { value: "∞", label: "Applications Tracked" },
-  { value: "3", label: "Career Tracks" },
+  { value: "4", label: "Career Tracks" },
 ];
 
 export default function HomePage() {

@@ -1477,11 +1477,12 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
   const runWebsiteScan = async () => {
     setScanning(true);
     setScanLog([]);
-    const trackName = trackFilter === "ib" ? "investment banking" : trackFilter === "consulting" ? "management consulting" : "product management";
+    const trackName = trackFilter === "ib" ? "investment banking" : trackFilter === "consulting" ? "management consulting" : trackFilter === "postgrad" ? "graduate program" : "product management";
     const trackKw = {
       ib: "investment banking analyst associate M&A ECM DCM summer analyst leveraged finance",
       consulting: "management consulting business analyst strategy consultant associate",
       product: "product manager APM associate product manager growth PM",
+      postgrad: "graduate program rotational program graduate scheme trainee MBA",
     };
 
     try {
@@ -1512,7 +1513,7 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
             track: trackFilter,
             level: levelFilter,
             saved: false,
-            tags: j.tags?.length ? j.tags : [trackFilter === "ib" ? "IB" : trackFilter === "consulting" ? "Consulting" : "Product"],
+            tags: j.tags?.length ? j.tags : [trackFilter === "ib" ? "IB" : trackFilter === "consulting" ? "Consulting" : trackFilter === "postgrad" ? "Post-Grad" : "Product"],
           }));
 
           setDiscJobs(prev => {
@@ -1531,7 +1532,7 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
           track: trackFilter,
           level: levelFilter,
           saved: false,
-          tags: j.tags?.length ? j.tags : [trackFilter === "ib" ? "IB" : trackFilter === "consulting" ? "Consulting" : "Product"],
+          tags: j.tags?.length ? j.tags : [trackFilter === "ib" ? "IB" : trackFilter === "consulting" ? "Consulting" : trackFilter === "postgrad" ? "Post-Grad" : "Product"],
         }));
 
         setDiscJobs(prev => {
@@ -1567,7 +1568,7 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
           level: levelFilter,
           saved: false,
           source: j.source || "AI Search",
-          tags: j.tags?.length ? j.tags : [trackFilter === "ib" ? "IB" : trackFilter === "consulting" ? "Consulting" : "Product"],
+          tags: j.tags?.length ? j.tags : [trackFilter === "ib" ? "IB" : trackFilter === "consulting" ? "Consulting" : trackFilter === "postgrad" ? "Post-Grad" : "Product"],
         }));
 
       setAiResults(withId);
@@ -1601,6 +1602,7 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
             <option value="ib">Investment Banking</option>
             <option value="consulting">Consulting</option>
             <option value="product">Product</option>
+            <option value="postgrad">Post-Graduate Path</option>
             <option value="">All Tracks</option>
           </select>
           <select className="input" style={{width:160}} value={levelFilter} onChange={e=>setLevelFilter(e.target.value)}>
@@ -1646,7 +1648,7 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
       {tab === "recommended" && (
         <div>
           <div className="alert a-gold mb16">
-            ✨ <span>Recommendations based on your <strong>{trackFilter === "ib" ? "IB" : trackFilter === "consulting" ? "Consulting" : "Product"} {levelFilter === "undergrad" ? "Undergrad" : "Experienced"}</strong> profile, CV, and location preference (<strong>{locationFilter || "All"}</strong>).</span>
+            ✨ <span>Recommendations based on your <strong>{trackFilter === "ib" ? "IB" : trackFilter === "consulting" ? "Consulting" : trackFilter === "postgrad" ? "Post-Grad" : "Product"} {levelFilter === "undergrad" ? "Undergrad" : "Experienced"}</strong> profile, CV, and location preference (<strong>{locationFilter || "All"}</strong>).</span>
           </div>
           <div className="grid g-auto">
             {filtered.map(job => (
@@ -1839,7 +1841,7 @@ function WebsiteManager() {
   const scanSite = async (site) => {
     setScanning(site.id);
     setSites(prev => prev.map(s => s.id === site.id ? { ...s, status: "scanning" } : s));
-    const trackKw = { ib: "investment banking analyst M&A ECM DCM summer analyst", consulting: "management consulting business analyst strategy", product: "product manager APM growth PM" };
+    const trackKw = { ib: "investment banking analyst M&A ECM DCM summer analyst", consulting: "management consulting business analyst strategy", product: "product manager APM growth PM", postgrad: "graduate program rotational scheme trainee MBA" };
     try {
       const extraKeywords = (site.keywords || []).join(" ");
       const extraTitles = (site.job_titles || []).join(" ");
@@ -3283,7 +3285,7 @@ ${textContent.slice(0, 6000)}`;
           <div className="grid g3 g16 mb16">
             <div className="fg"><label className="label">Deadline</label><input className="input" type="date" value={newJob.deadline} onChange={e=>setNewJob(p=>({...p,deadline:e.target.value}))}/></div>
             <div className="fg"><label className="label">Location</label><input className="input" placeholder="e.g. London" value={newJob.location} onChange={e=>setNewJob(p=>({...p,location:e.target.value}))}/></div>
-            <div className="fg"><label className="label">Track</label><select className="input" value={newJob.track} onChange={e=>setNewJob(p=>({...p,track:e.target.value}))}><option value="">Select...</option><option value="ib">Investment Banking</option><option value="consulting">Consulting</option><option value="pe">Private Equity</option><option value="am">Asset Management</option><option value="product">Product</option><option value="other">Other</option></select></div>
+            <div className="fg"><label className="label">Track</label><select className="input" value={newJob.track} onChange={e=>setNewJob(p=>({...p,track:e.target.value}))}><option value="">Select...</option><option value="ib">Investment Banking</option><option value="consulting">Consulting</option><option value="pe">Private Equity</option><option value="am">Asset Management</option><option value="product">Product</option><option value="postgrad">Post-Graduate Path</option><option value="other">Other</option></select></div>
           </div>
           <div className="grid g2 g16 mb16">
             <div className="fg"><label className="label">Tags <span className="t-ink4 fs11">(comma-separated)</span></label><input className="input" placeholder="e.g. M&A, Summer 2026" value={newJob.tags} onChange={e=>setNewJob(p=>({...p,tags:e.target.value}))}/></div>
@@ -5165,6 +5167,7 @@ function ExploreJobs({ jobs, setJobs }) {
             <option value="ib">Investment Banking</option>
             <option value="consulting">Consulting</option>
             <option value="product">Product</option>
+            <option value="postgrad">Post-Graduate Path</option>
           </select>
           <select className="input" style={{width:140}} value={filters.seniority} onChange={e => setFilters(f => ({ ...f, seniority: e.target.value }))}>
             <option value="">All Levels</option>

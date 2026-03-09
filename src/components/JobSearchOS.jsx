@@ -1648,7 +1648,7 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
       {tab === "recommended" && (
         <div>
           <div className="alert a-gold mb16">
-            ✨ <span>Recommendations based on your <strong>{trackFilter === "ib" ? "IB" : trackFilter === "consulting" ? "Consulting" : "Product"} {levelFilter === "undergrad" ? "Undergrad" : "Experienced"}</strong> profile, CV, and location preference (<strong>{locationFilter || "All"}</strong>).</span>
+            ✨ <span>Recommendations based on your <strong>{trackFilter === "ib" ? "IB" : trackFilter === "consulting" ? "Consulting" : trackFilter === "postgrad" ? "Post-Grad" : "Product"} {levelFilter === "undergrad" ? "Undergrad" : "Experienced"}</strong> profile, CV, and location preference (<strong>{locationFilter || "All"}</strong>).</span>
           </div>
           <div className="grid g-auto">
             {filtered.map(job => (

@@ -366,7 +366,7 @@ async function extractJobsFromPages(pages: any[], source: any): Promise<any[]> {
 }
 
 // ─── MATCHING ENGINE ───
-async function runMatching(supabase: any): Promise<number> {
+async function runMatching(supabase: any, userId: string): Promise<number> {
   // Get match config
   const { data: ruleData } = await supabase
     .from("admin_rules")
@@ -380,15 +380,20 @@ async function runMatching(supabase: any): Promise<number> {
   const weights = config.weights || {};
   const seniorityMap = config.seniority_mappings || {};
 
-  // Get all profiles
-  const { data: profiles } = await supabase.from("profiles").select("*");
+  // Get this user's profile
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("user_id", userId);
+
   if (!profiles?.length) return 0;
 
-  // Get recent jobs (last 7 days) that haven't been matched yet
+  // Get recent jobs (last 7 days) for this user that haven't been matched yet
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const { data: recentJobs } = await supabase
     .from("jobs")
     .select("*")
+    .eq("user_id", userId)
     .gte("created_at", weekAgo)
     .order("created_at", { ascending: false })
     .limit(60);

@@ -3217,6 +3217,46 @@ ${textContent.slice(0, 6000)}`;
     setContacts(prev => prev.filter(c => c.id !== contactId));
   };
 
+  const deleteJobRow = async (jobId) => {
+    if (!user) return;
+    await deleteJob(user.id, jobId);
+    setJobs(prev => prev.filter(j => j.id !== jobId));
+    setSelectedJobs(prev => { const n = new Set(prev); n.delete(jobId); return n; });
+  };
+
+  const bulkDeleteJobs = async () => {
+    if (selectedJobs.size === 0 || !user) return;
+    setDeleting(true);
+    for (const id of selectedJobs) {
+      await deleteJob(user.id, id);
+    }
+    setJobs(prev => prev.filter(j => !selectedJobs.has(j.id)));
+    setSelectedJobs(new Set());
+    setDeleting(false);
+  };
+
+  const toggleSelectJob = (id) => {
+    setSelectedJobs(prev => {
+      const n = new Set(prev);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedJobs.size === jobs.length) {
+      setSelectedJobs(new Set());
+    } else {
+      setSelectedJobs(new Set(jobs.map(j => j.id)));
+    }
+  };
+
+  const updateJobStage = async (jobId, newStage) => {
+    if (!user) return;
+    await upsertJob(user.id, { id: jobId, stage: newStage });
+    setJobs(prev => prev.map(j => j.id === jobId ? { ...j, stage: newStage } : j));
+  };
+
   return (
     <div className="page">
       <input type="file" ref={crmFileRef} style={{display:"none"}} accept=".csv,.xlsx,.xls,.pdf,.docx,.doc,.txt" onChange={handleCrmUpload}/>

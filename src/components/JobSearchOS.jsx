@@ -3025,8 +3025,10 @@ Return the full tailored CV text only, no commentary.`;
 /* ════════════════════════════════════════════════════════════════════════════
    PAGE: PIPELINE
 ══════════════════════════════════════════════════════════════════════════════ */
-function Pipeline({ jobs, setJobs }) {
+function Pipeline({ jobs: allJobs, setJobs }) {
   const { user } = useAuth();
+  // Only show manually added/saved jobs (no source_id = not from crawler)
+  const jobs = allJobs.filter(j => !j.source_id);
   const stages = ["saved","outreach","applying","interviewing","offer"];
   const labels = {saved:"Saved",outreach:"Outreach",applying:"Applying",interviewing:"Interviewing",offer:"Offer ✓"};
   const [contacts, setContacts] = useState([]);
@@ -4968,6 +4970,7 @@ export default function JobSearchOS() {
           location: j.location,
           description: j.description,
           source: j.source,
+          source_id: j.source_id,
           url: j.url,
         })));
       }

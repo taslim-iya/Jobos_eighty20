@@ -111,14 +111,14 @@ Deno.serve(async (req) => {
         // Extract jobs from pages using AI
         const extractedJobs = await extractJobsFromPages(pages, source);
 
-        // Dedupe and insert jobs
+        // Dedupe and upsert jobs (unique on user_id + source_job_url)
         let inserted = 0;
         for (const job of extractedJobs) {
           const hash = await hashText(job.source_job_url || job.title + job.company);
-           const { error } = await supabase.from("jobs").insert({
-             user_id: requesterUserId,
-             source_id: source.id,
-             source_job_url: job.source_job_url,
+          const jobRow = {
+            user_id: requesterUserId,
+            source_id: source.id,
+            source_job_url: job.source_job_url,
             title: job.title,
             firm: job.company,
             location: job.location || null,
@@ -135,15 +135,24 @@ Deno.serve(async (req) => {
             hash,
             stage: "saved",
             match_score: 0,
-          });
+          };
 
-          if (error) {
-            console.warn("Job insert failed", {
-              source_id: source.id,
-              source_job_url: job.source_job_url,
-              message: error.message,
+          // Try upsert on the unique index (user_id, source_job_url)
+          if (job.source_job_url) {
+            const { error } = await supabase.from("jobs").upsert(jobRow, {
+              onConflict: "user_id,source_job_url",
+              ignoreDuplicates: true,
             });
-            continue;
+            if (error) {
+              console.warn("Job upsert failed", { source_job_url: job.source_job_url, message: error.message });
+              continue;
+            }
+          } else {
+            const { error } = await supabase.from("jobs").insert(jobRow);
+            if (error) {
+              console.warn("Job insert failed", { message: error.message });
+              continue;
+            }
           }
 
           inserted++;

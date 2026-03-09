@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS jobs_user_source_url_uniq ON public.jobs (user_id, source_job_url) WHERE source_job_url IS NOT NULL;

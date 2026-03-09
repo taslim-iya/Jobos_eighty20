@@ -119,7 +119,17 @@ Deno.serve(async (req) => {
             stage: "saved",
             match_score: 0,
           });
-          if (!error) inserted++;
+
+          if (error) {
+            console.warn("Job insert failed", {
+              source_id: source.id,
+              source_job_url: job.source_job_url,
+              message: error.message,
+            });
+            continue;
+          }
+
+          inserted++;
         }
         totalInserted += inserted;
 

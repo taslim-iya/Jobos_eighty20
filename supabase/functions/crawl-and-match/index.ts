@@ -16,29 +16,39 @@ Deno.serve(async (req) => {
   const firecrawlKey = Deno.env.get("FIRECRAWL_API_KEY");
   const supabase = createClient(supabaseUrl, serviceKey);
 
-  // Optionally verify admin
+  // Require an authenticated user (jobs.user_id has a foreign-key constraint)
   const authHeader = req.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) {
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
+  if (!authHeader?.startsWith("Bearer ")) {
+    return new Response(JSON.stringify({ error: "Authentication required" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-    const { data: { user }, error: userErr } = await userClient.auth.getUser();
-    if (!userErr && user?.id) {
-      const { data: roleData } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", user.id)
-        .eq("role", "admin")
-        .maybeSingle();
-      if (!roleData) {
-        return new Response(JSON.stringify({ error: "Admin access required" }), {
-          status: 403,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-    }
   }
+
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+  const userClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
+
+  const { data: { user }, error: userErr } = await userClient.auth.getUser();
+  if (userErr || !user?.id) {
+    return new Response(JSON.stringify({ error: "Invalid session" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const requesterUserId = user.id;
+
+  // Admins can crawl all sources; non-admins must pass a source_id or paste_url
+  const { data: roleData } = await supabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", requesterUserId)
+    .eq("role", "admin")
+    .maybeSingle();
+
+  const isAdmin = !!roleData;
 
   const body = await req.json().catch(() => ({}));
   const { source_id, paste_url } = body;

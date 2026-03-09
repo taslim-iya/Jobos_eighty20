@@ -180,12 +180,9 @@ async function crawlSource(source: any, firecrawlKey: string | undefined): Promi
   }
 
   if (source.crawl_type === "sitemap") {
-    const resp = await fetch(endpoint, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ url: source.base_url, limit: 60 }),
-    });
-    const mapJson = await resp.json();
+    // NOTE: Some modern sites (like Trackr) render opportunities client-side.
+    // Firecrawl "map" can miss those links, so we scrape the page for links first,
+    // then follow a bounded subset of internal URLs.
 
     const baseHost = new URL(source.base_url).hostname.replace(/^www\./, "");
 
@@ -196,9 +193,22 @@ async function crawlSource(source: any, firecrawlKey: string | undefined): Promi
       return true;
     };
 
-    // Firecrawl map sometimes misses JS-rendered links; fall back to scraping links from the page.
-    const mapLinks = (mapJson?.links || mapJson?.data?.links || [])
-      .filter((u: string) => {
+    const linksResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: source.base_url,
+        formats: ["links"],
+        onlyMainContent: false,
+        waitFor: 12000,
+      }),
+    });
+
+    const linksJson = await linksResp.json();
+    const scrapedLinks = (linksJson?.data?.links || linksJson?.links || []) as string[];
+
+    const links = scrapedLinks
+      .filter((u) => {
         try {
           return new URL(u).hostname.replace(/^www\./, "") === baseHost;
         } catch {
@@ -207,34 +217,7 @@ async function crawlSource(source: any, firecrawlKey: string | undefined): Promi
       })
       .filter(filterAllowlist);
 
-    let links: string[] = mapLinks;
-
-    if (links.length < 5) {
-      const scrapeResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: source.base_url,
-          formats: ["links"],
-          onlyMainContent: false,
-          waitFor: 12000,
-        }),
-      });
-      const scrapeJson = await scrapeResp.json();
-      const scrapeLinks = (scrapeJson?.data?.links || scrapeJson?.links || []) as string[];
-      links = scrapeLinks
-        .filter((u) => {
-          try {
-            return new URL(u).hostname.replace(/^www\./, "") === baseHost;
-          } catch {
-            return false;
-          }
-        })
-        .filter(filterAllowlist);
-    }
-
     // Prioritize likely job/programme pages first, then take a bounded sample.
-    // (Trackr-style pages often surface opportunities via /programme/* and /company/* routes.)
     const prioritized = links
       .filter((u: string) => /\/programme\/|\/company\/|internship|graduate|summer/i.test(u))
       .concat(links)
@@ -250,7 +233,6 @@ async function crawlSource(source: any, firecrawlKey: string | undefined): Promi
             url,
             formats: ["markdown"],
             onlyMainContent: true,
-            // allow dynamic apps a moment to populate content
             waitFor: 8000,
           }),
         });

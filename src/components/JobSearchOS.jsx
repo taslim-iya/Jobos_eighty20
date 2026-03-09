@@ -3331,7 +3331,8 @@ ${textContent.slice(0, 6000)}`;
                     <div className="k-count">{stageJobs.length}</div>
                   </div>
                   {stageJobs.map(job=>(
-                    <div key={job.id} className="k-card">
+                    <div key={job.id} className="k-card" style={{position:"relative"}}>
+                      <button onClick={()=>deleteJobRow(job.id)} style={{position:"absolute",top:6,right:6,background:"none",border:"none",cursor:"pointer",color:"var(--ink4)",fontSize:12,padding:"2px 4px",borderRadius:4,lineHeight:1}} title="Delete" onMouseEnter={e=>e.target.style.color="var(--red)"} onMouseLeave={e=>e.target.style.color="var(--ink4)"}>✕</button>
                       <div className="k-card-title">{job.title}</div>
                       <div className="k-card-sub">{job.firm}</div>
                       <div className="flex g5 mt8" style={{flexWrap:"wrap"}}>

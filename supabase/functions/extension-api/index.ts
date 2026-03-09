@@ -50,6 +50,101 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ── Learn Field (save manually entered data to profile) ──
+    if (action === "learnField") {
+      const { fieldType, value } = payload;
+      if (!fieldType || !value) {
+        return new Response(JSON.stringify({ error: "Missing fieldType or value" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Map extension field types to profile columns
+      const fieldMapping: Record<string, string> = {
+        first_name: "display_name", // We'll handle name specially
+        last_name: "display_name",
+        location: "location",
+        university: "university",
+        gpa: "gpa",
+        graduation: "graduation_year",
+        visa: "visa_status",
+        start_date: "start_date",
+        experience: "experience_level",
+        salary: "salary_min",
+        linkedin: "linkedin_url",
+        website: "website",
+        phone: "phone",
+      };
+
+      const profileColumn = fieldMapping[fieldType];
+      if (!profileColumn) {
+        return new Response(JSON.stringify({ ok: false, message: "Field not learnable" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Get current profile
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("user_id", user.id)
+        .single();
+
+      if (!profile) {
+        return new Response(JSON.stringify({ error: "Profile not found" }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Handle special cases
+      let updateData: Record<string, unknown> = {};
+
+      if (fieldType === "first_name") {
+        const currentName = profile.display_name || "";
+        const parts = currentName.split(" ");
+        parts[0] = value;
+        updateData.display_name = parts.join(" ").trim();
+      } else if (fieldType === "last_name") {
+        const currentName = profile.display_name || "";
+        const parts = currentName.split(" ");
+        if (parts.length > 1) {
+          parts.splice(1, parts.length - 1, value);
+        } else {
+          parts.push(value);
+        }
+        updateData.display_name = parts.join(" ").trim();
+      } else if (fieldType === "salary") {
+        const numVal = parseInt(value.replace(/[^0-9]/g, ""), 10);
+        if (!isNaN(numVal)) updateData.salary_min = numVal;
+      } else if (fieldType === "skills") {
+        const newSkills = value.split(",").map((s: string) => s.trim()).filter(Boolean);
+        const existing = profile.skills || [];
+        const merged = [...new Set([...existing, ...newSkills])];
+        updateData.skills = merged;
+      } else {
+        updateData[profileColumn] = value;
+      }
+
+      // Update profile
+      const { error: updateErr } = await supabase
+        .from("profiles")
+        .update(updateData)
+        .eq("user_id", user.id);
+
+      if (updateErr) {
+        return new Response(JSON.stringify({ error: updateErr.message }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ ok: true, learned: fieldType, value }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // ── Generate Cover Letter ──
     if (action === "generateCoverLetter") {
       const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");

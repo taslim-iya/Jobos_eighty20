@@ -1532,7 +1532,7 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
           track: trackFilter,
           level: levelFilter,
           saved: false,
-          tags: j.tags?.length ? j.tags : [trackFilter === "ib" ? "IB" : trackFilter === "consulting" ? "Consulting" : "Product"],
+          tags: j.tags?.length ? j.tags : [trackFilter === "ib" ? "IB" : trackFilter === "consulting" ? "Consulting" : trackFilter === "postgrad" ? "Post-Grad" : "Product"],
         }));
 
         setDiscJobs(prev => {

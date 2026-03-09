@@ -53,6 +53,13 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   const { source_id, paste_url } = body;
 
+  if (!isAdmin && !source_id && !paste_url) {
+    return new Response(JSON.stringify({ error: "Admin access required to crawl all sources" }), {
+      status: 403,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   try {
     // ─── MODE 1: Parse a single pasted URL ───
     if (paste_url) {

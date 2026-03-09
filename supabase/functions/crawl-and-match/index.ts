@@ -396,7 +396,7 @@ async function runMatching(supabase: any, userId: string): Promise<number> {
     .eq("user_id", userId)
     .gte("created_at", weekAgo)
     .order("created_at", { ascending: false })
-    .limit(60);
+    .limit(500);
 
   if (!recentJobs?.length) return 0;
 

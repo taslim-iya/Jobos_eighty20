@@ -4827,6 +4827,10 @@ function ExploreJobs({ jobs, setJobs }) {
 
       <div className="card-flat mb16">
         <div className="flex items-c g12 flex-wrap">
+          <select className="input" style={{width:160}} value={filters.source_id} onChange={e => setFilters(f => ({ ...f, source_id: e.target.value }))}>
+            <option value="">All Sources</option>
+            {sources.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
           <select className="input" style={{width:160}} value={filters.track} onChange={e => setFilters(f => ({ ...f, track: e.target.value }))}>
             <option value="">All Tracks</option>
             <option value="ib">Investment Banking</option>

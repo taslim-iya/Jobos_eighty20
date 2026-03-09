@@ -166,8 +166,8 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ─── Run matching against all profiles ───
-    totalMatches = await runMatching(supabase);
+    // ─── Run matching against this user's profile ───
+    totalMatches = await runMatching(supabase, requesterUserId);
 
     return new Response(
       JSON.stringify({ success: true, jobs_inserted: totalInserted, matches_created: totalMatches, sources_crawled: sources.length }),

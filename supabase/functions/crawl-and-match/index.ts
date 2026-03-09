@@ -186,20 +186,34 @@ async function crawlSource(source: any, firecrawlKey: string | undefined): Promi
       body: JSON.stringify({ url: source.base_url, limit: 60 }),
     });
     const data = await resp.json();
-    const urls = (data?.links || []).filter((u: string) => {
+
+    const links = (data?.links || []).filter((u: string) => {
       if (source.allowlist_paths?.length > 0) {
         return source.allowlist_paths.some((p: string) => u.includes(p));
       }
       return true;
-    }).slice(0, 5); // keep edge runtime fast and reliable
+    });
 
-    // Scrape in parallel (bounded) to avoid request timeouts
-    const scrapePromises = urls.map(async (url: string) => {
+    // Prioritize likely job/programme pages first, then take a bounded sample.
+    // (Trackr-style pages often surface opportunities via /programme/* and /company/* routes.)
+    const prioritized = links
+      .filter((u: string) => /\/programme\/|\/company\/|internship|graduate|summer/i.test(u))
+      .concat(links)
+      .filter((u: string, i: number, arr: string[]) => arr.indexOf(u) === i)
+      .slice(0, 20);
+
+    const scrapeOne = async (url: string) => {
       try {
         const r = await fetch("https://api.firecrawl.dev/v1/scrape", {
           method: "POST",
           headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ url, formats: ["markdown"], onlyMainContent: true }),
+          body: JSON.stringify({
+            url,
+            formats: ["markdown"],
+            onlyMainContent: true,
+            // allow dynamic apps a moment to populate content
+            waitFor: 8000,
+          }),
         });
         const d = await r.json();
         if (d?.data?.markdown) return { url, markdown: d.data.markdown };
@@ -207,12 +221,21 @@ async function crawlSource(source: any, firecrawlKey: string | undefined): Promi
         // skip failed pages
       }
       return null;
-    });
+    };
 
-    const settled = await Promise.allSettled(scrapePromises);
-    return settled
-      .filter((s): s is PromiseFulfilledResult<any> => s.status === "fulfilled" && !!s.value)
-      .map((s) => s.value);
+    // Scrape in bounded batches to keep the edge runtime reliable
+    const pages: any[] = [];
+    for (let i = 0; i < prioritized.length; i += 4) {
+      const batch = prioritized.slice(i, i + 4);
+      const settled = await Promise.allSettled(batch.map(scrapeOne));
+      pages.push(
+        ...settled
+          .filter((s): s is PromiseFulfilledResult<any> => s.status === "fulfilled" && !!s.value)
+          .map((s) => s.value),
+      );
+    }
+
+    return pages;
   }
 
   // Default: crawl

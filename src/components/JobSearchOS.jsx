@@ -5438,7 +5438,7 @@ const PAGE_TITLES = {
   dashboard:"Dashboard", recommended:"Recommended Jobs", discover:"Job Discovery", explore:"Explore Jobs",
   websites:"Website Manager", pipeline:"CRM", playbooks:"Playbooks",
   cv:"CV + Cover Letters", interview:"Interview Prep",
-  extension:"Auto Apply", admin:"Admin Console",
+  extension:"Auto Apply", profile:"My Profile", admin:"Admin Console",
 };
 
 export default function JobSearchOS() {

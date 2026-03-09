@@ -1568,7 +1568,7 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
           level: levelFilter,
           saved: false,
           source: j.source || "AI Search",
-          tags: j.tags?.length ? j.tags : [trackFilter === "ib" ? "IB" : trackFilter === "consulting" ? "Consulting" : "Product"],
+          tags: j.tags?.length ? j.tags : [trackFilter === "ib" ? "IB" : trackFilter === "consulting" ? "Consulting" : trackFilter === "postgrad" ? "Post-Grad" : "Product"],
         }));
 
       setAiResults(withId);

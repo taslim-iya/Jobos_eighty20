@@ -4206,6 +4206,7 @@ function Admin() {
   const [allJobs, setAllJobs] = useState([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [jobsPage, setJobsPage] = useState(0);
+  const [jobSourceFilter, setJobSourceFilter] = useState("");
   const JOBS_PER_PAGE = 20;
 
   useEffect(() => {
@@ -4225,10 +4226,16 @@ function Admin() {
 
   const loadAllJobs = async () => {
     setLoadingJobs(true);
-    const { data } = await supabase.from("jobs").select("id, title, firm, stage, track, location, source, created_at, user_id, match_score, deadline, url, source_job_url").order("created_at", { ascending: false }).range(0, 200);
+    const { data } = await supabase.from("jobs").select("id, title, firm, stage, track, location, source, source_id, created_at, user_id, match_score, deadline, url, source_job_url").order("created_at", { ascending: false }).range(0, 499);
     setAllJobs(data || []);
     setLoadingJobs(false);
   };
+
+  const filteredAdminJobs = allJobs.filter(j => {
+    if (!jobSourceFilter) return true;
+    if (jobSourceFilter === "manual") return !j.source_id;
+    return j.source_id === jobSourceFilter;
+  });
 
   useEffect(() => {
     if (adminTab === "jobs" && isAdmin && allJobs.length === 0) loadAllJobs();
@@ -4442,34 +4449,41 @@ function Admin() {
           {adminTab === "jobs" && (
             <div className="card">
               <div className="card-header">
-                <div><div className="card-title">📋 All Jobs in System</div><div className="card-subtitle">{allJobs.length} total</div></div>
-                <button className="btn btn-outline btn-sm" onClick={loadAllJobs} disabled={loadingJobs}>{loadingJobs ? "🔄" : "↻ Refresh"}</button>
+                <div><div className="card-title">📋 All Jobs in System</div><div className="card-subtitle">{filteredAdminJobs.length} of {allJobs.length} total</div></div>
+                <div className="flex g8 items-c">
+                  <select className="input" style={{width:180}} value={jobSourceFilter} onChange={e => { setJobSourceFilter(e.target.value); setJobsPage(0); }}>
+                    <option value="">All Sources</option>
+                    <option value="manual">Manual / User Added</option>
+                    {sources.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                  <button className="btn btn-outline btn-sm" onClick={loadAllJobs} disabled={loadingJobs}>{loadingJobs ? "🔄" : "↻ Refresh"}</button>
+                </div>
               </div>
               {loadingJobs ? <div className="ai-pulse"><div className="dot-spin"/>Loading...</div> : (
                 <>
                   <table className="table">
-                    <thead><tr><th>Title</th><th>Firm</th><th>Track</th><th>Source URL</th><th>Added</th><th>Actions</th></tr></thead>
+                    <thead><tr><th>Title</th><th>Firm</th><th>Track</th><th>Source</th><th>Added</th><th>Actions</th></tr></thead>
                     <tbody>
-                      {allJobs.slice(jobsPage * JOBS_PER_PAGE, (jobsPage + 1) * JOBS_PER_PAGE).map(j => (
+                      {filteredAdminJobs.slice(jobsPage * JOBS_PER_PAGE, (jobsPage + 1) * JOBS_PER_PAGE).map(j => (
                         <tr key={j.id}>
                           <td className="fw6" style={{color:"var(--ink)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                             {j.url ? <a href={j.url} target="_blank" rel="noopener noreferrer" style={{color:"var(--ink)",textDecoration:"underline"}}>{j.title}</a> : j.title}
                           </td>
                           <td>{j.firm}</td>
                           <td><span className="tag t-navy">{j.track || "—"}</span></td>
-                          <td className="mono fs11" style={{maxWidth:160,overflow:"hidden",textOverflow:"ellipsis"}}>{j.source_job_url ? <a href={j.source_job_url} target="_blank" rel="noopener noreferrer" style={{color:"var(--blue)"}}>Link</a> : "—"}</td>
+                          <td><span className={`tag ${j.source_id ? "t-blue" : "t-ink"}`}>{j.source_id ? (sources.find(s => s.id === j.source_id)?.name || "Crawler") : "Manual"}</span></td>
                           <td className="mono fs11">{new Date(j.created_at).toLocaleDateString()}</td>
                           <td><button className="btn btn-ghost btn-xs" onClick={() => deleteAdminJob(j.id)} style={{color:"var(--red)"}}>✕</button></td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                  {allJobs.length > JOBS_PER_PAGE && (
+                  {filteredAdminJobs.length > JOBS_PER_PAGE && (
                     <div className="flex items-c j-between" style={{padding:"12px 0"}}>
-                      <div className="fs11 t-ink4">Page {jobsPage + 1} of {Math.ceil(allJobs.length / JOBS_PER_PAGE)}</div>
+                      <div className="fs11 t-ink4">Page {jobsPage + 1} of {Math.ceil(filteredAdminJobs.length / JOBS_PER_PAGE)}</div>
                       <div className="flex g8">
                         <button className="btn btn-outline btn-xs" disabled={jobsPage === 0} onClick={() => setJobsPage(p => p - 1)}>← Prev</button>
-                        <button className="btn btn-outline btn-xs" disabled={(jobsPage + 1) * JOBS_PER_PAGE >= allJobs.length} onClick={() => setJobsPage(p => p + 1)}>Next →</button>
+                        <button className="btn btn-outline btn-xs" disabled={(jobsPage + 1) * JOBS_PER_PAGE >= filteredAdminJobs.length} onClick={() => setJobsPage(p => p + 1)}>Next →</button>
                       </div>
                     </div>
                   )}
@@ -4773,13 +4787,16 @@ function RecommendedJobs({ jobs, setJobs, profile }) {
 function ExploreJobs({ jobs, setJobs }) {
   const { user } = useAuth();
   const [allJobs, setAllJobs] = useState([]);
+  const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({ track: "", location: "", seniority: "", search: "" });
+  const [filters, setFilters] = useState({ track: "", location: "", seniority: "", search: "", source_id: "" });
 
   useEffect(() => {
-    // Fetch all system jobs (with source_id set, i.e., from crawler)
-    supabase.from("jobs").select("*").not("source_id", "is", null).order("created_at", { ascending: false }).limit(200)
+    // Fetch all system jobs (with source_id set, i.e., from crawler) - increased limit to 500
+    supabase.from("jobs").select("*").not("source_id", "is", null).order("created_at", { ascending: false }).limit(500)
       .then(({ data }) => { setAllJobs(data || []); setLoading(false); });
+    // Fetch sources for filter
+    fetchSources().then(({ data }) => setSources(data || []));
   }, []);
 
   const filtered = allJobs.filter(j => {
@@ -4787,6 +4804,7 @@ function ExploreJobs({ jobs, setJobs }) {
     if (filters.location && !(j.location || "").toLowerCase().includes(filters.location.toLowerCase())) return false;
     if (filters.seniority && j.experience_level !== filters.seniority) return false;
     if (filters.search && !`${j.title} ${j.firm} ${j.description || ""}`.toLowerCase().includes(filters.search.toLowerCase())) return false;
+    if (filters.source_id && j.source_id !== filters.source_id) return false;
     return true;
   });
 
@@ -4809,6 +4827,10 @@ function ExploreJobs({ jobs, setJobs }) {
 
       <div className="card-flat mb16">
         <div className="flex items-c g12 flex-wrap">
+          <select className="input" style={{width:160}} value={filters.source_id} onChange={e => setFilters(f => ({ ...f, source_id: e.target.value }))}>
+            <option value="">All Sources</option>
+            {sources.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
           <select className="input" style={{width:160}} value={filters.track} onChange={e => setFilters(f => ({ ...f, track: e.target.value }))}>
             <option value="">All Tracks</option>
             <option value="ib">Investment Banking</option>

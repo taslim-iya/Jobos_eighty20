@@ -3022,6 +3022,8 @@ function Pipeline({ jobs: allJobs, setJobs }) {
   const stages = ["saved","outreach","applying","interviewing","offer"];
   const labels = {saved:"Saved",outreach:"Outreach",applying:"Applying",interviewing:"Interviewing",offer:"Offer ✓"};
   const [contacts, setContacts] = useState([]);
+  const [selectedJobs, setSelectedJobs] = useState(new Set());
+  const [deleting, setDeleting] = useState(false);
   const [crmTab, setCrmTab] = useState("pipeline");
   const [uploading, setUploading] = useState(false);
   const [uploadLog, setUploadLog] = useState("");

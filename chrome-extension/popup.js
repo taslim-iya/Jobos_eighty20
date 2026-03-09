@@ -1,4 +1,4 @@
-// JobSearchOS Extension - Popup Controller — Enhanced
+// JobSearchOS Extension - Popup Controller — Enhanced with Learning
 const SUPABASE_URL = 'https://ujtloxbdecirhicqfjka.supabase.co';
 const ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqdGxveGJkZWNpcmhpY3FmamthIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIzMjgyNzgsImV4cCI6MjA4NzkwNDI3OH0.AihC-gF0rD0BUWatMzqy8cwlHDr5pMY0c8hWKodemFc';
 
@@ -13,18 +13,17 @@ function showView(name) {
   views[name].classList.add('active-view');
 }
 
-// Check stored credentials on load
-chrome.storage.local.get(['supabase_token', 'user_profile', 'auto_fill_enabled'], (result) => {
+chrome.storage.local.get(['supabase_token', 'user_profile', 'auto_fill_enabled', 'learn_enabled'], (result) => {
   if (result.supabase_token && result.user_profile) {
     showConnected(result.user_profile);
     document.getElementById('auto-fill-toggle').checked = !!result.auto_fill_enabled;
+    document.getElementById('learn-toggle').checked = result.learn_enabled !== false;
     checkCurrentPage();
   } else {
     showView('login');
   }
 });
 
-// Connect button
 document.getElementById('connect-btn').addEventListener('click', async () => {
   const token = document.getElementById('api-token').value.trim();
   const errEl = document.getElementById('login-error');
@@ -39,7 +38,7 @@ document.getElementById('connect-btn').addEventListener('click', async () => {
     });
     if (!resp.ok) throw new Error('Authentication failed');
     const data = await resp.json();
-    chrome.storage.local.set({ supabase_token: token, user_profile: data.profile });
+    chrome.storage.local.set({ supabase_token: token, user_profile: data.profile, learn_enabled: true });
     showConnected(data.profile);
     checkCurrentPage();
   } catch (e) {
@@ -71,25 +70,29 @@ async function checkCurrentPage() {
         badge.textContent = result.platform.charAt(0).toUpperCase() + result.platform.slice(1);
         badge.style.display = 'inline-block';
       }
-      // Show LinkedIn-specific actions
       if (result.isLinkedInEasyApply) {
         document.getElementById('linkedin-actions').style.display = 'block';
       }
     }
-  } catch { /* content script not loaded */ }
+  } catch {}
 }
 
-// Auto-fill toggle
 document.getElementById('auto-fill-toggle').addEventListener('change', (e) => {
   const enabled = e.target.checked;
   chrome.storage.local.set({ auto_fill_enabled: enabled });
-  // Notify content script
   chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
     if (tab?.id) chrome.tabs.sendMessage(tab.id, { type: 'SET_AUTO_FILL', enabled });
   });
 });
 
-// Auto-fill button
+document.getElementById('learn-toggle').addEventListener('change', (e) => {
+  const enabled = e.target.checked;
+  chrome.storage.local.set({ learn_enabled: enabled });
+  chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+    if (tab?.id) chrome.tabs.sendMessage(tab.id, { type: 'SET_LEARN_ENABLED', enabled });
+  });
+});
+
 document.getElementById('autofill-btn').addEventListener('click', async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) return;
@@ -99,29 +102,19 @@ document.getElementById('autofill-btn').addEventListener('click', async () => {
   incrementAppsCounter();
 });
 
-// One-Click Apply
 document.getElementById('one-click-btn').addEventListener('click', async () => {
   const btn = document.getElementById('one-click-btn');
   btn.textContent = '⏳ Applying...';
   btn.disabled = true;
-
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id) return;
-
-    // Check if LinkedIn Easy Apply
     const pageInfo = await chrome.tabs.sendMessage(tab.id, { type: 'GET_PAGE_INFO' });
-
     const { user_profile, supabase_token } = await chrome.storage.local.get(['user_profile', 'supabase_token']);
-
     if (pageInfo?.isLinkedInEasyApply) {
-      // LinkedIn flow: fill all steps
-      const result = await chrome.tabs.sendMessage(tab.id, {
-        type: 'LINKEDIN_AUTO_APPLY', profile: user_profile, autoSubmit: false
-      });
+      const result = await chrome.tabs.sendMessage(tab.id, { type: 'LINKEDIN_AUTO_APPLY', profile: user_profile, autoSubmit: false });
       document.getElementById('fields-filled').textContent = result?.filled || 0;
     } else {
-      // Generic flow: generate cover letter → fill → submit
       let coverLetter = '';
       try {
         const resp = await fetch(`${SUPABASE_URL}/functions/v1/extension-api`, {
@@ -132,10 +125,7 @@ document.getElementById('one-click-btn').addEventListener('click', async () => {
         const data = await resp.json();
         coverLetter = data.coverLetter || '';
       } catch {}
-
-      const result = await chrome.tabs.sendMessage(tab.id, {
-        type: 'ONE_CLICK_APPLY', profile: user_profile, coverLetter, autoSubmit: false
-      });
+      const result = await chrome.tabs.sendMessage(tab.id, { type: 'ONE_CLICK_APPLY', profile: user_profile, coverLetter, autoSubmit: false });
       document.getElementById('fields-filled').textContent = result?.filled || 0;
     }
     incrementAppsCounter();
@@ -147,7 +137,6 @@ document.getElementById('one-click-btn').addEventListener('click', async () => {
   }
 });
 
-// LinkedIn Easy Apply
 document.getElementById('linkedin-fill-btn').addEventListener('click', async () => {
   const btn = document.getElementById('linkedin-fill-btn');
   btn.textContent = '⏳ Filling steps...';
@@ -156,9 +145,7 @@ document.getElementById('linkedin-fill-btn').addEventListener('click', async () 
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id) return;
     const { user_profile } = await chrome.storage.local.get('user_profile');
-    const result = await chrome.tabs.sendMessage(tab.id, {
-      type: 'LINKEDIN_AUTO_APPLY', profile: user_profile, autoSubmit: false
-    });
+    const result = await chrome.tabs.sendMessage(tab.id, { type: 'LINKEDIN_AUTO_APPLY', profile: user_profile, autoSubmit: false });
     document.getElementById('fields-filled').textContent = result?.filled || 0;
     incrementAppsCounter();
   } catch (e) {
@@ -169,7 +156,6 @@ document.getElementById('linkedin-fill-btn').addEventListener('click', async () 
   }
 });
 
-// Generate cover letter
 document.getElementById('generate-cl-btn').addEventListener('click', async () => {
   const btn = document.getElementById('generate-cl-btn');
   btn.textContent = '⏳ Generating...';
@@ -188,9 +174,7 @@ document.getElementById('generate-cl-btn').addEventListener('click', async () =>
       body: JSON.stringify({ action: 'generateCoverLetter', jobContext }),
     });
     const data = await resp.json();
-    if (data.coverLetter) {
-      await chrome.tabs.sendMessage(tab.id, { type: 'INSERT_COVER_LETTER', text: data.coverLetter });
-    }
+    if (data.coverLetter) await chrome.tabs.sendMessage(tab.id, { type: 'INSERT_COVER_LETTER', text: data.coverLetter });
   } catch (e) {
     console.error('CL generation failed:', e);
   } finally {
@@ -199,7 +183,6 @@ document.getElementById('generate-cl-btn').addEventListener('click', async () =>
   }
 });
 
-// Refresh profile
 document.getElementById('refresh-btn').addEventListener('click', async () => {
   const { supabase_token } = await chrome.storage.local.get('supabase_token');
   try {
@@ -213,9 +196,8 @@ document.getElementById('refresh-btn').addEventListener('click', async () => {
   } catch {}
 });
 
-// Disconnect
 document.getElementById('disconnect-btn').addEventListener('click', () => {
-  chrome.storage.local.remove(['supabase_token', 'user_profile', 'apps_today', 'apps_today_date', 'auto_fill_enabled']);
+  chrome.storage.local.remove(['supabase_token', 'user_profile', 'apps_today', 'apps_today_date', 'auto_fill_enabled', 'learn_enabled']);
   showView('login');
 });
 

@@ -1,4 +1,4 @@
-// JobSearchOS Auto-Fill Content Script — Enhanced
+// JobSearchOS Auto-Fill Content Script — Enhanced with Learning
 (() => {
   'use strict';
 
@@ -19,6 +19,9 @@
     experience: [/years?.?of?.?experience/i, /experience.?level/i],
     skills: [/skills/i, /competenc/i, /technologies/i],
   };
+
+  const SUPABASE_URL = 'https://ujtloxbdecirhicqfjka.supabase.co';
+  const ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqdGxveGJkZWNpcmhpY3FmamthIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIzMjgyNzgsImV4cCI6MjA4NzkwNDI3OH0.AihC-gF0rD0BUWatMzqy8cwlHDr5pMY0c8hWKodemFc';
 
   // ── Platform Detection ──
   function detectPlatform() {
@@ -187,14 +190,83 @@
   }
 
   // ══════════════════════════════════════════════
-  // LINKEDIN EASY APPLY — Multi-step handler
+  // LEARNING: Detect manual field entries and sync to profile
+  // ══════════════════════════════════════════════
+  const learnedFields = new Set();
+
+  async function learnField(fieldType, value) {
+    if (!fieldType || !value || learnedFields.has(fieldType)) return;
+    
+    const { supabase_token, learn_enabled } = await chrome.storage.local.get(['supabase_token', 'learn_enabled']);
+    if (!learn_enabled || !supabase_token) return;
+
+    if (fieldType === 'email') return;
+
+    learnedFields.add(fieldType);
+    
+    try {
+      await fetch(`${SUPABASE_URL}/functions/v1/extension-api`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabase_token}`,
+          'apikey': ANON,
+        },
+        body: JSON.stringify({ action: 'learnField', fieldType, value }),
+      });
+      showLearnBadge(fieldType);
+    } catch (e) {
+      console.log('[JSOS] Learn failed:', e);
+    }
+  }
+
+  function showLearnBadge(fieldType) {
+    const existing = document.getElementById('jsos-learn-badge');
+    if (existing) existing.remove();
+    const badge = document.createElement('div');
+    badge.id = 'jsos-learn-badge';
+    badge.innerHTML = `
+      <div style="position:fixed;bottom:80px;right:20px;background:#1A7F5A;color:#fff;
+        padding:10px 16px;border-radius:6px;font-family:Inter,sans-serif;font-size:12px;
+        z-index:999999;display:flex;align-items:center;gap:6px;box-shadow:0 4px 15px rgba(0,0,0,0.2);
+        animation:jsos-slide-in 0.3s ease-out;">
+        <span>🧠</span>
+        <span>Learned: ${fieldType.replace(/_/g, ' ')}</span>
+      </div>`;
+    document.body.appendChild(badge);
+    setTimeout(() => badge.remove(), 2500);
+  }
+
+  function setupFieldLearning() {
+    const inputs = document.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="file"]):not([type="password"]), textarea, select');
+    
+    inputs.forEach(el => {
+      if (el.dataset.jsosLearning) return;
+      el.dataset.jsosLearning = 'true';
+      
+      let initialValue = el.value;
+      
+      el.addEventListener('blur', () => {
+        const newValue = el.value?.trim();
+        if (newValue && newValue !== initialValue && !el.classList.contains('jsos-filled')) {
+          const fieldType = identifyField(el);
+          if (fieldType) {
+            learnField(fieldType, newValue);
+          }
+        }
+        initialValue = newValue;
+      });
+    });
+  }
+
+  // ══════════════════════════════════════════════
+  // LINKEDIN EASY APPLY
   // ══════════════════════════════════════════════
   function isLinkedInEasyApply() {
     return !!document.querySelector('.jobs-easy-apply-modal, .jobs-easy-apply-content, [data-test-modal-id="easy-apply-modal"]');
   }
 
   function linkedInFillCurrentStep(profile) {
-    // Fill visible fields in the current Easy Apply step
     const modal = document.querySelector('.jobs-easy-apply-modal, .jobs-easy-apply-content, [data-test-modal-id="easy-apply-modal"]');
     if (!modal) return 0;
     const inputs = modal.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="file"]), textarea, select');
@@ -210,7 +282,6 @@
   }
 
   function linkedInClickNext() {
-    // Look for "Next", "Review", or "Submit application" button
     const buttons = document.querySelectorAll('.jobs-easy-apply-modal button, .jobs-easy-apply-content button, [data-test-modal-id="easy-apply-modal"] button');
     for (const btn of buttons) {
       const text = btn.textContent?.trim().toLowerCase() || '';
@@ -219,7 +290,6 @@
         return 'next';
       }
     }
-    // Check for submit
     for (const btn of buttons) {
       const text = btn.textContent?.trim().toLowerCase() || '';
       const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
@@ -233,11 +303,11 @@
   async function linkedInAutoApply(profile, autoSubmit = false) {
     let totalFilled = 0;
     let steps = 0;
-    const maxSteps = 10; // Safety limit
+    const maxSteps = 10;
 
     while (steps < maxSteps) {
       steps++;
-      await sleep(800); // Wait for animations
+      await sleep(800);
       const filled = linkedInFillCurrentStep(profile);
       totalFilled += filled;
 
@@ -266,26 +336,16 @@
   // ONE-CLICK APPLY
   // ══════════════════════════════════════════════
   function clickSubmitButton() {
-    const selectors = [
-      'button[type="submit"]',
-      'input[type="submit"]',
-      'button[data-automation-id="submit"]',
-      '.btn-submit',
-    ];
+    const selectors = ['button[type="submit"]', 'input[type="submit"]', 'button[data-automation-id="submit"]', '.btn-submit'];
     for (const sel of selectors) {
       const btn = document.querySelector(sel);
-      if (btn && btn.offsetParent !== null) {
-        btn.click();
-        return true;
-      }
+      if (btn && btn.offsetParent !== null) { btn.click(); return true; }
     }
-    // Fallback: find button with submit-like text
     const buttons = document.querySelectorAll('button');
     for (const btn of buttons) {
       const text = (btn.textContent || '').trim().toLowerCase();
       if (/^submit|^apply now|^send application|^complete/i.test(text) && btn.offsetParent !== null) {
-        btn.click();
-        return true;
+        btn.click(); return true;
       }
     }
     return false;
@@ -295,41 +355,44 @@
   // AUTO-FILL ON PAGE LOAD
   // ══════════════════════════════════════════════
   function tryAutoFillOnLoad() {
-    chrome.storage.local.get(['user_profile', 'auto_fill_enabled'], (result) => {
+    chrome.storage.local.get(['user_profile', 'auto_fill_enabled', 'learn_enabled'], (result) => {
       if (!result.auto_fill_enabled || !result.user_profile) return;
       const { isApplyPage, platform } = detectApplicationForm();
       if (!isApplyPage) return;
 
-      // Small delay to let page fully render
       setTimeout(() => {
         if (platform === 'linkedin' && isLinkedInEasyApply()) {
           linkedInFillCurrentStep(result.user_profile);
         } else {
           autofillPage(result.user_profile);
         }
+        if (result.learn_enabled) setTimeout(setupFieldLearning, 500);
       }, 1500);
     });
   }
 
-  // Run auto-fill on load
   if (document.readyState === 'complete') {
     tryAutoFillOnLoad();
   } else {
     window.addEventListener('load', () => setTimeout(tryAutoFillOnLoad, 1000));
   }
 
-  // Also watch for LinkedIn Easy Apply modal opening
+  chrome.storage.local.get(['learn_enabled'], (result) => {
+    if (result.learn_enabled) {
+      const { isApplyPage } = detectApplicationForm();
+      if (isApplyPage) setTimeout(setupFieldLearning, 2000);
+    }
+  });
+
   const observer = new MutationObserver((mutations) => {
     for (const m of mutations) {
       for (const node of m.addedNodes) {
-        if (node.nodeType === 1 && (
-          node.classList?.contains('jobs-easy-apply-modal') ||
-          node.querySelector?.('.jobs-easy-apply-modal')
-        )) {
-          chrome.storage.local.get(['user_profile', 'auto_fill_enabled'], (result) => {
+        if (node.nodeType === 1 && (node.classList?.contains('jobs-easy-apply-modal') || node.querySelector?.('.jobs-easy-apply-modal'))) {
+          chrome.storage.local.get(['user_profile', 'auto_fill_enabled', 'learn_enabled'], (result) => {
             if (result.auto_fill_enabled && result.user_profile) {
               setTimeout(() => linkedInFillCurrentStep(result.user_profile), 800);
             }
+            if (result.learn_enabled) setTimeout(setupFieldLearning, 1500);
           });
         }
       }
@@ -337,19 +400,12 @@
   });
   observer.observe(document.body, { childList: true, subtree: true });
 
-  // ── Utility ──
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-  // ── Message Handler ──
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'GET_PAGE_INFO') {
       const { isApplyPage, platform } = detectApplicationForm();
-      sendResponse({
-        hasForm: isApplyPage,
-        jobTitle: extractJobTitle(),
-        platform,
-        isLinkedInEasyApply: platform === 'linkedin' && isLinkedInEasyApply(),
-      });
+      sendResponse({ hasForm: isApplyPage, jobTitle: extractJobTitle(), platform, isLinkedInEasyApply: platform === 'linkedin' && isLinkedInEasyApply() });
     } else if (msg.type === 'AUTOFILL') {
       const count = autofillPage(msg.profile);
       sendResponse({ filled: count });
@@ -358,30 +414,28 @@
       sendResponse({ success });
     } else if (msg.type === 'LINKEDIN_AUTO_APPLY') {
       linkedInAutoApply(msg.profile, msg.autoSubmit).then(sendResponse);
-      return true; // async
+      return true;
     } else if (msg.type === 'ONE_CLICK_APPLY') {
-      // Fill → optionally insert cover letter → submit
       (async () => {
         const filled = autofillPage(msg.profile);
-        if (msg.coverLetter) {
-          insertCoverLetter(msg.coverLetter);
-        }
+        if (msg.coverLetter) insertCoverLetter(msg.coverLetter);
         await sleep(500);
         const submitted = msg.autoSubmit ? clickSubmitButton() : false;
         sendResponse({ filled, submitted });
       })();
-      return true; // async
+      return true;
     } else if (msg.type === 'SET_AUTO_FILL') {
       chrome.storage.local.set({ auto_fill_enabled: msg.enabled });
+      sendResponse({ ok: true });
+    } else if (msg.type === 'SET_LEARN_ENABLED') {
+      chrome.storage.local.set({ learn_enabled: msg.enabled });
+      if (msg.enabled) setupFieldLearning();
       sendResponse({ ok: true });
     }
     return true;
   });
 
-  // Add animation styles
   const style = document.createElement('style');
-  style.textContent = `
-    @keyframes jsos-slide-in { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-  `;
+  style.textContent = `@keyframes jsos-slide-in { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }`;
   document.head.appendChild(style);
 })();

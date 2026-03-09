@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { fetchJobs, upsertJob, deleteJob, fetchDocuments, upsertDocument, deleteDocument, uploadFile, deleteFile, exportToCSV, exportToText, fetchWebsites, upsertWebsite, deleteWebsite, fetchContacts, upsertContact, fetchSources, upsertSource, deleteSource, fetchAdminTemplates, upsertAdminTemplate, deleteAdminTemplate, fetchAdminRules, upsertAdminRule, fetchUploads, insertUpload, fetchProfileMatches, updateMatchStatus, fetchCrawlRuns } from "@/lib/database";
+import { fetchJobs, upsertJob, deleteJob, fetchDocuments, upsertDocument, deleteDocument, uploadFile, deleteFile, exportToCSV, exportToText, fetchWebsites, upsertWebsite, deleteWebsite, fetchContacts, upsertContact, fetchSources, upsertSource, deleteSource, fetchAdminTemplates, upsertAdminTemplate, deleteAdminTemplate, fetchAdminRules, upsertAdminRule, fetchUploads, insertUpload, fetchProfileMatches, updateMatchStatus, fetchCrawlRuns, fetchApplicationQueue, upsertQueueItem, deleteQueueItem } from "@/lib/database";
 import { supabase } from "@/integrations/supabase/client";
 import { jsPDF } from "jspdf";
 // html2canvas removed — using jsPDF native text rendering for small file sizes

@@ -216,123 +216,98 @@ async function crawlSource(source: any, firecrawlKey: string | undefined): Promi
   }
 
   if (source.crawl_type === "sitemap") {
-    // Strategy: First try AI JSON extraction on the main listing page to get ALL jobs
-    // from the rendered table. This is far more effective than following sub-links.
-    console.log("Attempting AI table extraction on:", source.base_url);
+    // Strategy: Scrape markdown and parse the table directly (AI JSON extraction has token limits)
+    console.log("Scraping markdown table from:", source.base_url);
     
     const tableResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
       method: "POST",
       headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         url: source.base_url,
-        formats: [
-          {
-            type: "json",
-            schema: {
-              type: "object",
-              properties: {
-                jobs: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      title: { type: "string", description: "Job/programme title" },
-                      company: { type: "string", description: "Company or firm name" },
-                      location: { type: "string", description: "Job location" },
-                      deadline: { type: "string", description: "Application deadline" },
-                      url: { type: "string", description: "Link to the job/programme page" },
-                      track: { type: "string", description: "Career track like IB, consulting, asset management, etc." },
-                      status: { type: "string", description: "Application status (open, closed, rolling)" },
-                    },
-                  },
-                },
-              },
-            },
-            prompt: "Extract ALL job/programme listings from this page table. For each row, get the programme title, company name, location, deadline, application URL, career track, and status. Include every single row visible on the page.",
-          },
-          "markdown",
-        ],
+        formats: ["markdown"],
         onlyMainContent: true,
         waitFor: 10000,
       }),
     });
 
     const tableData = await tableResp.json();
-    const aiJobs = tableData?.data?.json?.jobs || tableData?.json?.jobs || [];
-    console.log(`AI table extraction found ${aiJobs.length} jobs from ${source.base_url}`);
+    const markdown = tableData?.data?.markdown || tableData?.markdown || "";
+    console.log(`Got markdown: ${markdown.length} chars`);
 
-    if (aiJobs.length > 0) {
-      // Return as synthetic pages so extractJobsFromPages can process them
-      // But we'll add a special flag so we use the AI-extracted data directly
-      return aiJobs.map((j: any) => ({
-        url: j.url?.startsWith("http") ? j.url : j.url ? `https://app.the-trackr.com${j.url}` : source.base_url,
-        markdown: tableData?.data?.markdown || "",
-        _aiExtracted: j,
-      }));
-    }
+    // Parse markdown table rows
+    // Format: | status | [Company](company_url) | [Programme](apply_url) | opening | closing | stage | ... |
+    const tableRows = markdown.split("\n").filter((line: string) => 
+      line.startsWith("|") && line.includes("[") && !line.includes("---")
+    );
 
-    // Fallback: scrape sub-links if AI extraction found nothing
-    console.log("AI extraction found 0 jobs, falling back to sub-link scraping");
-    const baseHost = new URL(source.base_url).hostname.replace(/^www\./, "");
+    const parsedJobs: any[] = [];
+    for (const row of tableRows) {
+      // Extract company: [Name](url)
+      const companyMatch = row.match(/\|\s*\[([^\]]+)\]\(([^)]+)\)/);
+      if (!companyMatch) continue;
+      const companyName = companyMatch[1];
 
-    const filterAllowlist = (u: string) => {
-      if (source.allowlist_paths?.length > 0) {
-        return source.allowlist_paths.some((p: string) => u.includes(p));
+      // Extract programme: second [Name](url) pattern  
+      const allLinks = [...row.matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)];
+      // Find the programme link (usually the second link, not CV template links)
+      let programmeTitle = "";
+      let applyUrl = "";
+      for (const link of allLinks) {
+        if (link[2].includes("trackr-cv-template") || link[2].includes("jobtestprep")) continue;
+        if (link[2].includes("/company/")) continue; // skip company links
+        if (!programmeTitle) {
+          // First non-company, non-template link after company = might still be company
+          // Check if it's different from company link
+          if (link[2] !== companyMatch[2]) {
+            programmeTitle = link[1];
+            applyUrl = link[2];
+            break;
+          }
+        }
       }
-      return true;
-    };
 
-    const linksResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        url: source.base_url,
-        formats: ["links"],
-        onlyMainContent: false,
-        waitFor: 6000,
-      }),
-    });
+      if (!programmeTitle) {
+        // Try to get programme from the second link overall
+        if (allLinks.length >= 2 && allLinks[1][2] !== companyMatch[2]) {
+          programmeTitle = allLinks[1][1];
+          applyUrl = allLinks[1][2];
+        } else {
+          programmeTitle = `${companyName} Programme`;
+          applyUrl = companyMatch[2];
+        }
+      }
 
-    const linksJson = await linksResp.json();
-    const scrapedLinks = (linksJson?.data?.links || linksJson?.links || []) as string[];
+      // Extract dates from cells
+      const cells = row.split("|").map((c: string) => c.trim());
+      // Find date-like cells (DD Mon YY format)
+      const datePattern = /\d{1,2}\s+\w{3}\s+\d{2}/;
+      const dateCells = cells.filter((c: string) => datePattern.test(c));
+      const openingDate = dateCells[0] || null;
+      const closingDate = dateCells[1] || null;
 
-    const links = scrapedLinks
-      .filter((u) => {
-        try { return new URL(u).hostname.replace(/^www\./, "") === baseHost; } catch { return false; }
-      })
-      .filter(filterAllowlist);
-
-    const prioritized = links
-      .filter((u: string) => /\/programme\/|\/company\/|internship|graduate|summer/i.test(u))
-      .concat(links)
-      .filter((u: string, i: number, arr: string[]) => arr.indexOf(u) === i)
-      .slice(0, 20);
-
-    const scrapeOne = async (url: string) => {
-      try {
-        const r = await fetch("https://api.firecrawl.dev/v1/scrape", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ url, formats: ["markdown"], onlyMainContent: true, waitFor: 4000 }),
-        });
-        const d = await r.json();
-        if (d?.data?.markdown) return { url, markdown: d.data.markdown };
-      } catch { /* skip */ }
-      return null;
-    };
-
-    const pages: any[] = [];
-    for (let i = 0; i < prioritized.length; i += 3) {
-      const batch = prioritized.slice(i, i + 3);
-      const settled = await Promise.allSettled(batch.map(scrapeOne));
-      pages.push(
-        ...settled
-          .filter((s): s is PromiseFulfilledResult<any> => s.status === "fulfilled" && !!s.value)
-          .map((s) => s.value),
+      // Extract stage (e.g., "Offers Out", "First Round", "AC")
+      const stageCells = cells.filter((c: string) => 
+        /offers out|first round|ac$|assessment/i.test(c)
       );
+      const latestStage = stageCells[0] || null;
+
+      parsedJobs.push({
+        url: applyUrl.startsWith("http") ? applyUrl : `https://app.the-trackr.com${applyUrl}`,
+        markdown: "",
+        _aiExtracted: {
+          title: programmeTitle,
+          company: companyName,
+          location: "London", // UK Finance tracker is UK-focused
+          deadline: closingDate,
+          url: applyUrl,
+          track: null,
+          status: latestStage || (closingDate ? "open" : "rolling"),
+        },
+      });
     }
 
-    return pages;
+    console.log(`Parsed ${parsedJobs.length} jobs from markdown table`);
+    return parsedJobs;
   }
 
   // Default: crawl

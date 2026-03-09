@@ -1602,6 +1602,7 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
             <option value="ib">Investment Banking</option>
             <option value="consulting">Consulting</option>
             <option value="product">Product</option>
+            <option value="postgrad">Post-Graduate Path</option>
             <option value="">All Tracks</option>
           </select>
           <select className="input" style={{width:160}} value={levelFilter} onChange={e=>setLevelFilter(e.target.value)}>

@@ -4263,7 +4263,7 @@ function Extension() {
           <div style={{width:36,height:36,background:"linear-gradient(135deg, var(--gold), var(--gold3))",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:14}}>⚡</div>
           <div style={{flex:1}}>
             <div className="fw6 fs14" style={{color:"var(--ink)"}}>Chrome Extension — Auto-Fill</div>
-            <div className="fs11 t-ink4">Auto-fill job application forms with your profile data</div>
+            <div className="fs11 t-ink4">One-click apply, auto-fill on page load, LinkedIn Easy Apply support</div>
           </div>
           <button className="btn btn-primary btn-sm" onClick={async()=>{
             const { downloadExtensionZip } = await import("@/lib/extensionZip");
@@ -4274,23 +4274,45 @@ function Extension() {
           <div className="grid g3 g12" style={{marginBottom:16}}>
             <div style={{background:"var(--surface2)",padding:"14px 16px",borderRadius:8}}>
               <div className="fw6 fs12 mb4" style={{color:"var(--gold)"}}>Step 1</div>
-              <div className="fs12 t-ink2">Click <strong>Download Extension</strong> above to get the ZIP file</div>
+              <div className="fs12 t-ink2">Click <strong>Download Extension</strong> above, unzip, load in <code style={{background:"var(--surface3)",padding:"1px 6px",borderRadius:4,fontSize:11}}>chrome://extensions</code></div>
             </div>
             <div style={{background:"var(--surface2)",padding:"14px 16px",borderRadius:8}}>
               <div className="fw6 fs12 mb4" style={{color:"var(--gold)"}}>Step 2</div>
-              <div className="fs12 t-ink2">Unzip, then go to <code style={{background:"var(--surface3)",padding:"1px 6px",borderRadius:4,fontSize:11}}>chrome://extensions</code> → Enable Developer Mode → Load Unpacked</div>
+              <div className="fs12 t-ink2">Copy your <strong>Extension Token</strong> below and paste it in the extension popup</div>
             </div>
             <div style={{background:"var(--surface2)",padding:"14px 16px",borderRadius:8}}>
               <div className="fw6 fs12 mb4" style={{color:"var(--gold)"}}>Step 3</div>
-              <div className="fs12 t-ink2">Open the extension popup, paste your auth token, and connect to start auto-filling forms</div>
+              <div className="fs12 t-ink2">Visit any job page — forms auto-fill, or use <strong>🚀 One-Click Apply</strong></div>
             </div>
           </div>
-          <div className="flex g8" style={{alignItems:"center"}}>
+
+          {/* Token Generation */}
+          <div style={{background:"var(--surface2)",border:"1px solid var(--border2)",borderRadius:8,padding:"14px 16px",marginBottom:16}}>
+            <div className="flex items-c j-between mb8">
+              <div className="fw6 fs12" style={{color:"var(--ink)"}}>🔑 Extension Token</div>
+              <button className="btn btn-primary btn-xs" style={{width:"auto",padding:"4px 14px"}} onClick={async()=>{
+                try {
+                  const { data } = await supabase.auth.getSession();
+                  const token = data?.session?.access_token;
+                  if (token) {
+                    await navigator.clipboard.writeText(token);
+                    alert("✅ Token copied to clipboard! Paste it in the extension popup.");
+                  } else {
+                    alert("⚠ No active session. Please log in first.");
+                  }
+                } catch(e) { alert("Failed to copy token: " + e.message); }
+              }}>📋 Copy Token</button>
+            </div>
+            <div className="fs11 t-ink4">This token connects the Chrome extension to your account. It refreshes automatically — copy a new one if the extension disconnects.</div>
+          </div>
+
+          <div className="flex g8" style={{alignItems:"center",flexWrap:"wrap"}}>
             <span className="tag t-blue" style={{fontSize:10}}>Greenhouse</span>
             <span className="tag t-blue" style={{fontSize:10}}>Lever</span>
             <span className="tag t-blue" style={{fontSize:10}}>Workday</span>
-            <span className="tag t-blue" style={{fontSize:10}}>LinkedIn</span>
+            <span className="tag t-blue" style={{fontSize:10}}>LinkedIn Easy Apply</span>
             <span className="tag t-blue" style={{fontSize:10}}>SmartRecruiters</span>
+            <span className="tag t-blue" style={{fontSize:10}}>Ashby</span>
             <span className="tag t-ink4" style={{fontSize:10}}>+ any site</span>
           </div>
         </div>

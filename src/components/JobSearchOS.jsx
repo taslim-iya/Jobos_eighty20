@@ -4787,13 +4787,16 @@ function RecommendedJobs({ jobs, setJobs, profile }) {
 function ExploreJobs({ jobs, setJobs }) {
   const { user } = useAuth();
   const [allJobs, setAllJobs] = useState([]);
+  const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({ track: "", location: "", seniority: "", search: "" });
+  const [filters, setFilters] = useState({ track: "", location: "", seniority: "", search: "", source_id: "" });
 
   useEffect(() => {
-    // Fetch all system jobs (with source_id set, i.e., from crawler)
-    supabase.from("jobs").select("*").not("source_id", "is", null).order("created_at", { ascending: false }).limit(200)
+    // Fetch all system jobs (with source_id set, i.e., from crawler) - increased limit to 500
+    supabase.from("jobs").select("*").not("source_id", "is", null).order("created_at", { ascending: false }).limit(500)
       .then(({ data }) => { setAllJobs(data || []); setLoading(false); });
+    // Fetch sources for filter
+    fetchSources().then(({ data }) => setSources(data || []));
   }, []);
 
   const filtered = allJobs.filter(j => {
@@ -4801,6 +4804,7 @@ function ExploreJobs({ jobs, setJobs }) {
     if (filters.location && !(j.location || "").toLowerCase().includes(filters.location.toLowerCase())) return false;
     if (filters.seniority && j.experience_level !== filters.seniority) return false;
     if (filters.search && !`${j.title} ${j.firm} ${j.description || ""}`.toLowerCase().includes(filters.search.toLowerCase())) return false;
+    if (filters.source_id && j.source_id !== filters.source_id) return false;
     return true;
   });
 

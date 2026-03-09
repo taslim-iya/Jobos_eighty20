@@ -4206,6 +4206,7 @@ function Admin() {
   const [allJobs, setAllJobs] = useState([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [jobsPage, setJobsPage] = useState(0);
+  const [jobSourceFilter, setJobSourceFilter] = useState("");
   const JOBS_PER_PAGE = 20;
 
   useEffect(() => {

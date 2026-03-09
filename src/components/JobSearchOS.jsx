@@ -4275,16 +4275,22 @@ function Extension() {
         <div style={{padding:"16px 24px"}}>
           <div className="grid g3 g12" style={{marginBottom:16}}>
             <div style={{background:"var(--surface2)",padding:"14px 16px",borderRadius:8}}>
-              <div className="fw6 fs12 mb4" style={{color:"var(--gold)"}}>Step 1</div>
-              <div className="fs12 t-ink2">Click <strong>Download Extension</strong> above, unzip, load in <code style={{background:"var(--surface3)",padding:"1px 6px",borderRadius:4,fontSize:11}}>chrome://extensions</code></div>
+              <div className="fw6 fs12 mb4" style={{color:"var(--gold)"}}>Step 1 — Download & Unzip</div>
+              <div className="fs12 t-ink2">Click <strong>Download Extension</strong> above. Unzip the file anywhere on your computer.</div>
             </div>
             <div style={{background:"var(--surface2)",padding:"14px 16px",borderRadius:8}}>
-              <div className="fw6 fs12 mb4" style={{color:"var(--gold)"}}>Step 2</div>
-              <div className="fs12 t-ink2">Copy your <strong>Extension Token</strong> below and paste it in the extension popup</div>
+              <div className="fw6 fs12 mb4" style={{color:"var(--gold)"}}>Step 2 — Load into Chrome</div>
+              <div className="fs12 t-ink2">
+                <strong>1.</strong> Open Chrome → type <code style={{background:"var(--surface3)",padding:"1px 6px",borderRadius:4,fontSize:11}}>chrome://extensions</code> in the address bar<br/>
+                <strong>2.</strong> Toggle <strong>Developer mode</strong> ON (top-right switch)<br/>
+                <strong>3.</strong> Click <strong>"Load unpacked"</strong> (top-left)<br/>
+                <strong>4.</strong> Select the unzipped <strong>jobsearchos-extension</strong> folder<br/>
+                <strong>5.</strong> Pin the extension from the puzzle-piece icon 📌
+              </div>
             </div>
             <div style={{background:"var(--surface2)",padding:"14px 16px",borderRadius:8}}>
-              <div className="fw6 fs12 mb4" style={{color:"var(--gold)"}}>Step 3</div>
-              <div className="fs12 t-ink2">Visit any job page — forms auto-fill, or use <strong>🚀 One-Click Apply</strong></div>
+              <div className="fw6 fs12 mb4" style={{color:"var(--gold)"}}>Step 3 — Connect & Apply</div>
+              <div className="fs12 t-ink2">Click the extension icon, paste your <strong>token</strong> (below), then visit any job page. Toggle <strong>🧠 Learn</strong> so it saves new data you type!</div>
             </div>
           </div>
 

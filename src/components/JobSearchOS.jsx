@@ -4376,10 +4376,27 @@ function Extension() {
   const [queue, setQueue] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(null); // job_id being generated
-  const [viewingLetter, setViewingLetter] = useState(null); // queue item being viewed
-  const [tab, setTab] = useState("queued"); // queued | generating | ready | applied
+  const [generating, setGenerating] = useState(null);
+  const [viewingLetter, setViewingLetter] = useState(null);
+  const [tab, setTab] = useState("queued");
   const [showAddModal, setShowAddModal] = useState(false);
+
+  // Auto-fill details state
+  const [autoFillProfile, setAutoFillProfile] = useState(null);
+  const [editingField, setEditingField] = useState(null);
+  const [editValue, setEditValue] = useState("");
+  const [savingField, setSavingField] = useState(null);
+  const [newFieldName, setNewFieldName] = useState("");
+  const [newFieldValue, setNewFieldValue] = useState("");
+  const [showAddField, setShowAddField] = useState(false);
+
+  // Load profile for auto-fill
+  useEffect(() => {
+    if (!user) return;
+    supabase.from("profiles").select("*").eq("user_id", user.id).single().then(({ data }) => {
+      if (data) setAutoFillProfile({ ...data, email: user.email });
+    });
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;

@@ -384,6 +384,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          auto_fill_data: Json | null
           company_blacklist: string[] | null
           created_at: string
           cv_text: string | null
@@ -396,8 +397,10 @@ export type Database = {
           industries: string[] | null
           keywords_exclude: string[] | null
           keywords_include: string[] | null
+          linkedin_url: string | null
           location: string | null
           locations: string[] | null
+          phone: string | null
           salary_min: number | null
           skills: string[] | null
           start_date: string | null
@@ -407,8 +410,10 @@ export type Database = {
           updated_at: string
           user_id: string
           visa_status: string | null
+          website: string | null
         }
         Insert: {
+          auto_fill_data?: Json | null
           company_blacklist?: string[] | null
           created_at?: string
           cv_text?: string | null
@@ -421,8 +426,10 @@ export type Database = {
           industries?: string[] | null
           keywords_exclude?: string[] | null
           keywords_include?: string[] | null
+          linkedin_url?: string | null
           location?: string | null
           locations?: string[] | null
+          phone?: string | null
           salary_min?: number | null
           skills?: string[] | null
           start_date?: string | null
@@ -432,8 +439,10 @@ export type Database = {
           updated_at?: string
           user_id: string
           visa_status?: string | null
+          website?: string | null
         }
         Update: {
+          auto_fill_data?: Json | null
           company_blacklist?: string[] | null
           created_at?: string
           cv_text?: string | null
@@ -446,8 +455,10 @@ export type Database = {
           industries?: string[] | null
           keywords_exclude?: string[] | null
           keywords_include?: string[] | null
+          linkedin_url?: string | null
           location?: string | null
           locations?: string[] | null
+          phone?: string | null
           salary_min?: number | null
           skills?: string[] | null
           start_date?: string | null
@@ -457,6 +468,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
           visa_status?: string | null
+          website?: string | null
         }
         Relationships: []
       }

@@ -4389,13 +4389,21 @@ function Extension() {
   const [newFieldName, setNewFieldName] = useState("");
   const [newFieldValue, setNewFieldValue] = useState("");
   const [showAddField, setShowAddField] = useState(false);
+  const [lastSynced, setLastSynced] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Load profile for auto-fill
-  useEffect(() => {
+  const refreshAutoFillProfile = async () => {
     if (!user) return;
-    supabase.from("profiles").select("*").eq("user_id", user.id).single().then(({ data }) => {
-      if (data) setAutoFillProfile({ ...data, email: user.email });
-    });
+    setRefreshing(true);
+    const { data } = await supabase.from("profiles").select("*").eq("user_id", user.id).single();
+    if (data) setAutoFillProfile({ ...data, email: user.email });
+    setLastSynced(new Date());
+    setRefreshing(false);
+  };
+
+  useEffect(() => {
+    refreshAutoFillProfile();
   }, [user]);
 
   useEffect(() => {

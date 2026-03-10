@@ -60,9 +60,9 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Map extension field types to profile columns
-      const fieldMapping: Record<string, string> = {
-        first_name: "display_name", // We'll handle name specially
+      // Known profile columns
+      const knownColumns: Record<string, string> = {
+        first_name: "display_name",
         last_name: "display_name",
         location: "location",
         university: "university",
@@ -75,14 +75,8 @@ Deno.serve(async (req) => {
         linkedin: "linkedin_url",
         website: "website",
         phone: "phone",
+        email: "email",
       };
-
-      const profileColumn = fieldMapping[fieldType];
-      if (!profileColumn) {
-        return new Response(JSON.stringify({ ok: false, message: "Field not learnable" }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
 
       // Get current profile
       const { data: profile } = await supabase
@@ -98,36 +92,36 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Handle special cases
-      let updateData: Record<string, unknown> = {};
+      const updateData: Record<string, unknown> = {};
 
-      if (fieldType === "first_name") {
-        const currentName = profile.display_name || "";
-        const parts = currentName.split(" ");
-        parts[0] = value;
-        updateData.display_name = parts.join(" ").trim();
-      } else if (fieldType === "last_name") {
-        const currentName = profile.display_name || "";
-        const parts = currentName.split(" ");
-        if (parts.length > 1) {
-          parts.splice(1, parts.length - 1, value);
+      if (knownColumns[fieldType]) {
+        // Handle known fields with special cases
+        if (fieldType === "first_name") {
+          const parts = (profile.display_name || "").split(" ");
+          parts[0] = value;
+          updateData.display_name = parts.join(" ").trim();
+        } else if (fieldType === "last_name") {
+          const parts = (profile.display_name || "").split(" ");
+          if (parts.length > 1) parts.splice(1, parts.length - 1, value);
+          else parts.push(value);
+          updateData.display_name = parts.join(" ").trim();
+        } else if (fieldType === "salary") {
+          const numVal = parseInt(value.replace(/[^0-9]/g, ""), 10);
+          if (!isNaN(numVal)) updateData.salary_min = numVal;
+        } else if (fieldType === "skills") {
+          const newSkills = value.split(",").map((s: string) => s.trim()).filter(Boolean);
+          const existing = profile.skills || [];
+          updateData.skills = [...new Set([...existing, ...newSkills])];
         } else {
-          parts.push(value);
+          updateData[knownColumns[fieldType]] = value;
         }
-        updateData.display_name = parts.join(" ").trim();
-      } else if (fieldType === "salary") {
-        const numVal = parseInt(value.replace(/[^0-9]/g, ""), 10);
-        if (!isNaN(numVal)) updateData.salary_min = numVal;
-      } else if (fieldType === "skills") {
-        const newSkills = value.split(",").map((s: string) => s.trim()).filter(Boolean);
-        const existing = profile.skills || [];
-        const merged = [...new Set([...existing, ...newSkills])];
-        updateData.skills = merged;
       } else {
-        updateData[profileColumn] = value;
+        // Unknown field → store in auto_fill_data JSON
+        const existing = (profile.auto_fill_data as Record<string, string>) || {};
+        existing[fieldType] = value;
+        updateData.auto_fill_data = existing;
       }
 
-      // Update profile
       const { error: updateErr } = await supabase
         .from("profiles")
         .update(updateData)

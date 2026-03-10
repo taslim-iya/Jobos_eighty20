@@ -4389,13 +4389,21 @@ function Extension() {
   const [newFieldName, setNewFieldName] = useState("");
   const [newFieldValue, setNewFieldValue] = useState("");
   const [showAddField, setShowAddField] = useState(false);
+  const [lastSynced, setLastSynced] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Load profile for auto-fill
-  useEffect(() => {
+  const refreshAutoFillProfile = async () => {
     if (!user) return;
-    supabase.from("profiles").select("*").eq("user_id", user.id).single().then(({ data }) => {
-      if (data) setAutoFillProfile({ ...data, email: user.email });
-    });
+    setRefreshing(true);
+    const { data } = await supabase.from("profiles").select("*").eq("user_id", user.id).single();
+    if (data) setAutoFillProfile({ ...data, email: user.email });
+    setLastSynced(new Date());
+    setRefreshing(false);
+  };
+
+  useEffect(() => {
+    refreshAutoFillProfile();
   }, [user]);
 
   useEffect(() => {
@@ -4563,11 +4571,25 @@ function Extension() {
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             <span style={{fontSize:18}}>📋</span>
             <div>
-              <div className="fw6 fs14" style={{color:"var(--ink)"}}>Auto-Fill Details</div>
-              <div className="fs11 t-ink4">These fields are used to auto-fill job applications. Edit here or let the extension learn from forms you fill.</div>
+              <div className="fw6 fs14" style={{color:"var(--ink)",display:"flex",alignItems:"center",gap:8}}>
+                Auto-Fill Details
+                {autoFillProfile && (() => {
+                  const learnedCount = Object.keys(autoFillProfile.auto_fill_data || {}).length;
+                  return learnedCount > 0 ? <span className="tag t-green" style={{fontSize:9,padding:"2px 6px"}}>{learnedCount} learned</span> : null;
+                })()}
+              </div>
+              <div className="fs11 t-ink4">
+                These fields are used to auto-fill job applications. Edit here or let the extension learn from forms you fill.
+                {lastSynced && <span style={{marginLeft:8}}>· Last synced: {lastSynced.toLocaleTimeString()}</span>}
+              </div>
             </div>
           </div>
-          <button className="btn btn-outline btn-sm" onClick={() => setShowAddField(!showAddField)}>+ Add Field</button>
+          <div style={{display:"flex",gap:6}}>
+            <button className="btn btn-outline btn-sm" onClick={refreshAutoFillProfile} disabled={refreshing} style={{fontSize:11}}>
+              {refreshing ? "⏳" : "🔄"} Refresh
+            </button>
+            <button className="btn btn-outline btn-sm" onClick={() => setShowAddField(!showAddField)}>+ Add Field</button>
+          </div>
         </div>
 
         {showAddField && (

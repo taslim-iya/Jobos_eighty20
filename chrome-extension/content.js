@@ -491,7 +491,7 @@
       return true;
     } else if (msg.type === 'ONE_CLICK_APPLY') {
       (async () => {
-        const filled = autofillPage(msg.profile);
+        const filled = await autofillPage(msg.profile);
         if (msg.coverLetter) insertCoverLetter(msg.coverLetter);
         await sleep(500);
         const submitted = msg.autoSubmit ? clickSubmitButton() : false;

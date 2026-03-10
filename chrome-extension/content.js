@@ -140,16 +140,90 @@
     setTimeout(() => { el.style.boxShadow = ''; el.style.borderColor = ''; }, 3000);
   }
 
-  function autofillPage(profile) {
-    const inputs = document.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="file"]), textarea, select');
+  // Collect metadata for unidentified fields to send to AI
+  function getFieldMeta(el) {
+    let labelText = '';
+    if (el.id) {
+      const label = document.querySelector(`label[for="${el.id}"]`);
+      if (label) labelText = label.textContent.trim();
+    }
+    if (!labelText) {
+      const wrapper = el.closest('.field, .form-group, [data-automation-id], .fb-form-element, .jobs-easy-apply-form-element');
+      if (wrapper) {
+        const lbl = wrapper.querySelector('label, .label, legend, .fb-form-element-label');
+        if (lbl) labelText = lbl.textContent.trim();
+      }
+    }
+    return {
+      label: labelText,
+      name: el.name || '',
+      id: el.id || '',
+      placeholder: el.placeholder || '',
+      type: el.type || el.tagName.toLowerCase(),
+      ariaLabel: el.getAttribute('aria-label') || '',
+      autocomplete: el.getAttribute('autocomplete') || '',
+    };
+  }
+
+  async function aiIdentifyFields(fieldMetas) {
+    try {
+      const { supabase_token } = await chrome.storage.local.get('supabase_token');
+      if (!supabase_token) return [];
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/extension-api`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabase_token}`,
+          'apikey': ANON,
+        },
+        body: JSON.stringify({ action: 'identifyFields', fields: fieldMetas }),
+      });
+      if (!resp.ok) return [];
+      const data = await resp.json();
+      return data.mappings || [];
+    } catch (e) {
+      console.log('[JSOS] AI identify failed:', e);
+      return [];
+    }
+  }
+
+  async function autofillPage(profile) {
+    const inputs = Array.from(document.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="file"]), textarea, select'));
     let filledCount = 0;
-    inputs.forEach(el => {
+
+    // First pass: regex-based identification
+    const unidentified = []; // { index, el, meta }
+    const identified = [];   // { el, fieldType }
+
+    inputs.forEach((el, i) => {
       if (el.value && el.value.trim()) return;
       const fieldType = identifyField(el);
-      if (!fieldType) return;
+      if (fieldType) {
+        identified.push({ el, fieldType });
+      } else {
+        unidentified.push({ index: i, el, meta: getFieldMeta(el) });
+      }
+    });
+
+    // Fill regex-matched fields immediately
+    for (const { el, fieldType } of identified) {
       const value = getProfileValue(fieldType, profile);
       if (fillField(el, value)) filledCount++;
-    });
+    }
+
+    // Second pass: AI identification for unmatched fields
+    if (unidentified.length > 0) {
+      const metas = unidentified.map(u => u.meta);
+      const mappings = await aiIdentifyFields(metas);
+      for (let i = 0; i < unidentified.length; i++) {
+        const fieldType = mappings[i];
+        if (fieldType && fieldType !== 'null') {
+          const value = getProfileValue(fieldType, profile);
+          if (fillField(unidentified[i].el, value)) filledCount++;
+        }
+      }
+    }
+
     showFillBadge(filledCount);
     return filledCount;
   }
@@ -407,8 +481,8 @@
       const { isApplyPage, platform } = detectApplicationForm();
       sendResponse({ hasForm: isApplyPage, jobTitle: extractJobTitle(), platform, isLinkedInEasyApply: platform === 'linkedin' && isLinkedInEasyApply() });
     } else if (msg.type === 'AUTOFILL') {
-      const count = autofillPage(msg.profile);
-      sendResponse({ filled: count });
+      autofillPage(msg.profile).then(count => sendResponse({ filled: count }));
+      return true;
     } else if (msg.type === 'INSERT_COVER_LETTER') {
       const success = insertCoverLetter(msg.text);
       sendResponse({ success });
@@ -417,7 +491,7 @@
       return true;
     } else if (msg.type === 'ONE_CLICK_APPLY') {
       (async () => {
-        const filled = autofillPage(msg.profile);
+        const filled = await autofillPage(msg.profile);
         if (msg.coverLetter) insertCoverLetter(msg.coverLetter);
         await sleep(500);
         const submitted = msg.autoSubmit ? clickSubmitButton() : false;

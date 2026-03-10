@@ -139,6 +139,67 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ── AI Field Identification ──
+    if (action === "identifyFields") {
+      const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+      if (!LOVABLE_API_KEY) throw new Error("AI not configured");
+
+      const { fields } = payload;
+      if (!fields || !Array.isArray(fields) || fields.length === 0) {
+        return new Response(JSON.stringify({ error: "No fields provided" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Build a concise description of each field for the AI
+      const fieldDescriptions = fields.map((f: { index: number; label: string; name: string; id: string; placeholder: string; type: string; ariaLabel: string; autocomplete: string }, i: number) =>
+        `[${i}] label="${f.label || ""}" name="${f.name || ""}" id="${f.id || ""}" placeholder="${f.placeholder || ""}" type="${f.type || "text"}" aria-label="${f.ariaLabel || ""}" autocomplete="${f.autocomplete || ""}"`
+      ).join("\n");
+
+      const profileFields = [
+        "first_name", "last_name", "email", "phone", "linkedin", "location",
+        "university", "gpa", "graduation", "website", "salary", "visa",
+        "start_date", "experience", "skills"
+      ];
+
+      const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash-lite",
+          messages: [
+            {
+              role: "system",
+              content: `You map HTML form fields to profile data types. Given form field metadata, return a JSON array where each element is the profile field name or null if no match. Profile fields: ${profileFields.join(", ")}. IMPORTANT: Distinguish first_name from last_name carefully based on labels/names/placeholders. Return ONLY a JSON array of strings/nulls, no explanation.`,
+            },
+            { role: "user", content: fieldDescriptions },
+          ],
+        }),
+      });
+
+      if (!aiResp.ok) {
+        if (aiResp.status === 429) return new Response(JSON.stringify({ error: "Rate limited" }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        throw new Error("AI field identification failed");
+      }
+
+      const aiData = await aiResp.json();
+      let content = aiData.choices?.[0]?.message?.content || "[]";
+      // Extract JSON array from response
+      const jsonMatch = content.match(/\[[\s\S]*\]/);
+      let mappings: (string | null)[] = [];
+      if (jsonMatch) {
+        try { mappings = JSON.parse(jsonMatch[0]); } catch { mappings = []; }
+      }
+
+      return new Response(JSON.stringify({ mappings }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // ── Generate Cover Letter ──
     if (action === "generateCoverLetter") {
       const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");

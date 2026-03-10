@@ -481,8 +481,8 @@
       const { isApplyPage, platform } = detectApplicationForm();
       sendResponse({ hasForm: isApplyPage, jobTitle: extractJobTitle(), platform, isLinkedInEasyApply: platform === 'linkedin' && isLinkedInEasyApply() });
     } else if (msg.type === 'AUTOFILL') {
-      const count = autofillPage(msg.profile);
-      sendResponse({ filled: count });
+      autofillPage(msg.profile).then(count => sendResponse({ filled: count }));
+      return true;
     } else if (msg.type === 'INSERT_COVER_LETTER') {
       const success = insertCoverLetter(msg.text);
       sendResponse({ success });

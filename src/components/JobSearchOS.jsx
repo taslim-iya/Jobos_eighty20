@@ -4631,25 +4631,42 @@ function Extension() {
                         </td>
                         <td style={{padding:"10px 16px"}}>
                           {isEditing ? (
-                            <input autoFocus value={editValue} onChange={e=>setEditValue(e.target.value)}
-                              onKeyDown={async(e)=>{
-                                if(e.key==="Enter"){
-                                  setSavingField(field.key);
-                                  if(field.isCustom){
-                                    const existing = {...(autoFillProfile.auto_fill_data||{})};
-                                    existing[field.col] = editValue;
-                                    await supabase.from("profiles").update({auto_fill_data:existing}).eq("user_id",user.id);
-                                    setAutoFillProfile(p=>({...p,auto_fill_data:existing}));
-                                  } else {
-                                    const val = field.col==="skills" ? editValue.split(",").map(s=>s.trim()).filter(Boolean) : (field.col==="salary_min"?parseInt(editValue)||null:editValue);
-                                    await supabase.from("profiles").update({[field.col]:val}).eq("user_id",user.id);
-                                    setAutoFillProfile(p=>({...p,[field.col]:val}));
+                            <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                              <input autoFocus value={editValue} onChange={e=>setEditValue(e.target.value)}
+                                onKeyDown={async(e)=>{
+                                  if(e.key==="Enter"){
+                                    setSavingField(field.key);
+                                    if(field.isCustom){
+                                      const existing = {...(autoFillProfile.auto_fill_data||{})};
+                                      existing[field.col] = editValue;
+                                      await supabase.from("profiles").update({auto_fill_data:existing}).eq("user_id",user.id);
+                                      setAutoFillProfile(p=>({...p,auto_fill_data:existing}));
+                                    } else {
+                                      const val = field.col==="skills" ? editValue.split(",").map(s=>s.trim()).filter(Boolean) : (field.col==="salary_min"?parseInt(editValue)||null:editValue);
+                                      await supabase.from("profiles").update({[field.col]:val}).eq("user_id",user.id);
+                                      setAutoFillProfile(p=>({...p,[field.col]:val}));
+                                    }
+                                    setEditingField(null); setSavingField(null);
                                   }
-                                  setEditingField(null); setSavingField(null);
+                                  if(e.key==="Escape") setEditingField(null);
+                                }}
+                                style={{flex:1,padding:"4px 8px",border:"1px solid var(--gold)",borderRadius:4,fontSize:12,background:"var(--surface)"}} />
+                              <button className="btn btn-sm" style={{padding:"2px 10px",fontSize:10,background:"var(--gold)",color:"var(--bg)",border:"none",borderRadius:4,fontWeight:600,cursor:"pointer"}} onClick={async()=>{
+                                setSavingField(field.key);
+                                if(field.isCustom){
+                                  const existing = {...(autoFillProfile.auto_fill_data||{})};
+                                  existing[field.col] = editValue;
+                                  await supabase.from("profiles").update({auto_fill_data:existing}).eq("user_id",user.id);
+                                  setAutoFillProfile(p=>({...p,auto_fill_data:existing}));
+                                } else {
+                                  const val = field.col==="skills" ? editValue.split(",").map(s=>s.trim()).filter(Boolean) : (field.col==="salary_min"?parseInt(editValue)||null:editValue);
+                                  await supabase.from("profiles").update({[field.col]:val}).eq("user_id",user.id);
+                                  setAutoFillProfile(p=>({...p,[field.col]:val}));
                                 }
-                                if(e.key==="Escape") setEditingField(null);
-                              }}
-                              style={{width:"100%",padding:"4px 8px",border:"1px solid var(--gold)",borderRadius:4,fontSize:12,background:"var(--surface)"}} />
+                                setEditingField(null); setSavingField(null);
+                              }}>{savingField === field.key ? "..." : "Save"}</button>
+                              <button className="btn btn-sm" style={{padding:"2px 8px",fontSize:10,color:"var(--ink4)",background:"none",border:"1px solid var(--border2)",borderRadius:4,cursor:"pointer"}} onClick={()=>setEditingField(null)}>✕</button>
+                            </div>
                           ) : (
                             <span style={{color: displayVal ? "var(--ink)" : "var(--ink4)", cursor:"pointer"}} onClick={()=>{setEditingField(field.key);setEditValue(displayVal);}}>
                               {displayVal || "—"}

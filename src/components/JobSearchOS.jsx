@@ -4557,7 +4557,137 @@ function Extension() {
         </div>
       </div>
 
-      {/* Status tabs */}
+      {/* ── Auto-Fill Details Table ── */}
+      <div className="card mb20" style={{padding:0,overflow:"hidden"}}>
+        <div style={{padding:"16px 24px",borderBottom:"1px solid var(--border2)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:18}}>📋</span>
+            <div>
+              <div className="fw6 fs14" style={{color:"var(--ink)"}}>Auto-Fill Details</div>
+              <div className="fs11 t-ink4">These fields are used to auto-fill job applications. Edit here or let the extension learn from forms you fill.</div>
+            </div>
+          </div>
+          <button className="btn btn-outline btn-sm" onClick={() => setShowAddField(!showAddField)}>+ Add Field</button>
+        </div>
+
+        {showAddField && (
+          <div style={{padding:"12px 24px",background:"var(--surface2)",borderBottom:"1px solid var(--border2)",display:"flex",gap:8,alignItems:"center"}}>
+            <input placeholder="Field name (e.g. Cover Letter Tone)" value={newFieldName} onChange={e=>setNewFieldName(e.target.value)} style={{flex:1,padding:"6px 10px",border:"1px solid var(--border)",borderRadius:6,fontSize:12,background:"var(--surface)"}} />
+            <input placeholder="Value" value={newFieldValue} onChange={e=>setNewFieldValue(e.target.value)} style={{flex:2,padding:"6px 10px",border:"1px solid var(--border)",borderRadius:6,fontSize:12,background:"var(--surface)"}} />
+            <button className="btn btn-primary btn-sm" onClick={async()=>{
+              if (!newFieldName.trim() || !newFieldValue.trim()) return;
+              const key = newFieldName.trim().toLowerCase().replace(/\s+/g,"_");
+              const existing = (autoFillProfile?.auto_fill_data) || {};
+              existing[key] = newFieldValue.trim();
+              await supabase.from("profiles").update({ auto_fill_data: existing }).eq("user_id", user.id);
+              setAutoFillProfile(p => ({...p, auto_fill_data: existing}));
+              setNewFieldName(""); setNewFieldValue(""); setShowAddField(false);
+            }}>Save</button>
+          </div>
+        )}
+
+        {autoFillProfile ? (
+          <div style={{overflow:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead>
+                <tr style={{background:"var(--surface2)"}}>
+                  <th style={{padding:"10px 16px",textAlign:"left",fontWeight:600,color:"var(--ink3)",width:"30%",borderBottom:"1px solid var(--border2)"}}>Field</th>
+                  <th style={{padding:"10px 16px",textAlign:"left",fontWeight:600,color:"var(--ink3)",borderBottom:"1px solid var(--border2)"}}>Value</th>
+                  <th style={{padding:"10px 16px",textAlign:"left",fontWeight:600,color:"var(--ink3)",width:"10%",borderBottom:"1px solid var(--border2)"}}>Source</th>
+                  <th style={{padding:"10px 16px",textAlign:"right",fontWeight:600,color:"var(--ink3)",width:"10%",borderBottom:"1px solid var(--border2)"}}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  const knownFields = [
+                    { key: "display_name", label: "Full Name", col: "display_name" },
+                    { key: "email", label: "Email", col: "email" },
+                    { key: "phone", label: "Phone", col: "phone" },
+                    { key: "location", label: "Location", col: "location" },
+                    { key: "university", label: "University", col: "university" },
+                    { key: "gpa", label: "GPA", col: "gpa" },
+                    { key: "graduation_year", label: "Graduation Year", col: "graduation_year" },
+                    { key: "experience_level", label: "Experience Level", col: "experience_level" },
+                    { key: "visa_status", label: "Visa Status", col: "visa_status" },
+                    { key: "start_date", label: "Start Date", col: "start_date" },
+                    { key: "salary_min", label: "Salary Min", col: "salary_min" },
+                    { key: "linkedin_url", label: "LinkedIn URL", col: "linkedin_url" },
+                    { key: "website", label: "Website", col: "website" },
+                    { key: "skills", label: "Skills", col: "skills" },
+                  ];
+                  const customFields = Object.entries(autoFillProfile.auto_fill_data || {}).map(([k,v]) => ({
+                    key: `custom_${k}`, label: k.replace(/_/g," ").replace(/\b\w/g, c=>c.toUpperCase()), col: k, value: v, isCustom: true
+                  }));
+
+                  const allFields = [...knownFields.map(f => ({...f, value: autoFillProfile[f.col], isCustom: false})), ...customFields];
+
+                  return allFields.map(field => {
+                    const displayVal = Array.isArray(field.value) ? field.value.join(", ") : (field.value != null ? String(field.value) : "");
+                    const isEditing = editingField === field.key;
+                    return (
+                      <tr key={field.key} style={{borderBottom:"1px solid var(--border2)"}}>
+                        <td style={{padding:"10px 16px",color:"var(--ink2)",fontWeight:500}}>
+                          {field.label}
+                        </td>
+                        <td style={{padding:"10px 16px"}}>
+                          {isEditing ? (
+                            <input autoFocus value={editValue} onChange={e=>setEditValue(e.target.value)}
+                              onKeyDown={async(e)=>{
+                                if(e.key==="Enter"){
+                                  setSavingField(field.key);
+                                  if(field.isCustom){
+                                    const existing = {...(autoFillProfile.auto_fill_data||{})};
+                                    existing[field.col] = editValue;
+                                    await supabase.from("profiles").update({auto_fill_data:existing}).eq("user_id",user.id);
+                                    setAutoFillProfile(p=>({...p,auto_fill_data:existing}));
+                                  } else {
+                                    const val = field.col==="skills" ? editValue.split(",").map(s=>s.trim()).filter(Boolean) : (field.col==="salary_min"?parseInt(editValue)||null:editValue);
+                                    await supabase.from("profiles").update({[field.col]:val}).eq("user_id",user.id);
+                                    setAutoFillProfile(p=>({...p,[field.col]:val}));
+                                  }
+                                  setEditingField(null); setSavingField(null);
+                                }
+                                if(e.key==="Escape") setEditingField(null);
+                              }}
+                              style={{width:"100%",padding:"4px 8px",border:"1px solid var(--gold)",borderRadius:4,fontSize:12,background:"var(--surface)"}} />
+                          ) : (
+                            <span style={{color: displayVal ? "var(--ink)" : "var(--ink4)", cursor:"pointer"}} onClick={()=>{setEditingField(field.key);setEditValue(displayVal);}}>
+                              {displayVal || "—"}
+                            </span>
+                          )}
+                        </td>
+                        <td style={{padding:"10px 16px"}}>
+                          <span className={`tag ${field.isCustom ? "t-green" : "t-blue"}`} style={{fontSize:9}}>
+                            {field.isCustom ? "🧠 Learned" : "Profile"}
+                          </span>
+                        </td>
+                        <td style={{padding:"10px 16px",textAlign:"right"}}>
+                          {!isEditing && (
+                            <button className="btn btn-sm" style={{padding:"2px 8px",fontSize:10,color:"var(--ink4)",background:"none",border:"1px solid var(--border2)"}} onClick={()=>{setEditingField(field.key);setEditValue(displayVal);}}>Edit</button>
+                          )}
+                          {isEditing && savingField === field.key && <span className="fs10 t-ink4">Saving...</span>}
+                          {field.isCustom && !isEditing && (
+                            <button className="btn btn-sm" style={{padding:"2px 8px",fontSize:10,color:"var(--red)",background:"none",border:"none",marginLeft:4}} onClick={async()=>{
+                              const existing = {...(autoFillProfile.auto_fill_data||{})};
+                              delete existing[field.col];
+                              await supabase.from("profiles").update({auto_fill_data:existing}).eq("user_id",user.id);
+                              setAutoFillProfile(p=>({...p,auto_fill_data:existing}));
+                            }}>✕</button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  });
+                })()}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div style={{padding:24,textAlign:"center",color:"var(--ink4)",fontSize:13}}>Loading auto-fill data...</div>
+        )}
+      </div>
+
+
       <div className="flex g8 mb20" style={{borderBottom:"1px solid var(--border2)",paddingBottom:12}}>
         {[["queued","📋 Queued"],["ready","✅ Ready"],["applied","🎯 Applied"],["all","📊 All"]].map(([key,label])=>(
           <button key={key} className={`btn btn-sm ${tab===key?"btn-primary":"btn-outline"}`} onClick={()=>setTab(key)}>

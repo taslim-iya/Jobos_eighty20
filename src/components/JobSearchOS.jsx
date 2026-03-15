@@ -3127,7 +3127,7 @@ function Pipeline({ jobs: allJobs, setJobs }) {
       }
 
       setJobUploadLog("🤖 AI is parsing jobs from your file...");
-      const prompt = `Parse the following document content into a list of job opportunities. Extract: title (job title), firm (company name), track (one of: ib, consulting, product), level (undergrad or experienced), location, deadline, description, source (where the job was found), and url (application link if available).
+      const prompt = `Parse the following document content into a list of job opportunities. Extract: title (job title), firm (company name), track (one of: ib, pe, vc, consulting, trading, am, tech), level (undergrad or experienced), location, deadline, description, source (where the job was found), and url (application link if available).
 
 Return ONLY a valid JSON array like:
 [{"title":"Summer Analyst 2026","firm":"Goldman Sachs","track":"ib","level":"undergrad","location":"London","deadline":"Rolling","description":"IBD summer analyst programme","source":"Company Website","url":"https://..."}]

@@ -1357,7 +1357,7 @@ function Dashboard({ jobs, profile }) {
   return (
     <div className="page">
       <div className="hero">
-        <div className="hero-eye">{profile.track === "ib" ? "IB" : profile.track === "consulting" ? "Consulting" : profile.track === "postgrad" ? "Post-Grad" : "Product"} Track · {profile.level === "undergrad" ? "Undergraduate" : "Experienced Hire"}</div>
+        <div className="hero-eye">{({ib:"IB",pe:"PE",vc:"VC",consulting:"Consulting",trading:"Sales & Trading",am:"Investment Mgmt",tech:"Tech & Startups"})[profile.track]||profile.track} Track · {profile.level === "undergrad" ? "Undergraduate" : "Experienced Hire"}</div>
         <div className="hero-h">Welcome back, {profile.name.split(" ")[0]}.<br/>{jobs.filter(j=>j.stage!=="saved"&&j.stage!=="offer").length > 0 ? `You have ${jobs.filter(j=>j.stage!=="saved"&&j.stage!=="offer").length} active applications.` : "Start by discovering roles."}</div>
         <div className="hero-p">{jobs.filter(j=>j.stage==="interviewing").length > 0 ? `${jobs.filter(j=>j.stage==="interviewing").length} interview(s) in progress. Focus on preparation.` : jobs.length > 0 ? "Keep building your pipeline and preparing for interviews." : "Use Job Discovery to find and save roles to your pipeline."}</div>
         <div className="hero-actions">

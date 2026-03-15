@@ -268,7 +268,7 @@ Deno.serve(async (req) => {
           stage: "saved",
           deadline: j.deadline,
           match_score: 80,
-          tags: j.track === "ib" ? ["IB"] : j.track === "consulting" ? ["Consulting"] : ["Product"],
+          tags: ({ib:["IB"],pe:["PE"],vc:["VC"],consulting:["Consulting"],trading:["S&T"],am:["IM"],tech:["Tech"]})[j.track] || [j.track],
           track: j.track,
           experience_level: j.level,
           location: j.location,

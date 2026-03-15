@@ -4931,8 +4931,24 @@ function Admin() {
   }, [adminTab, isAdmin]);
 
   const [crawlProgress, setCrawlProgress] = useState(0);
+  const crawlAbortRef = useRef(null);
+
+  const cancelCrawl = () => {
+    if (crawlAbortRef.current) {
+      crawlAbortRef.current.abort();
+      crawlAbortRef.current = null;
+    }
+    setScrapeRunning(false);
+    setCrawlProgress(0);
+    setScrapeResult({ error: "Crawl cancelled by user" });
+  };
 
   const runCrawlAndMatch = async (sourceId = null) => {
+    // Abort any existing crawl
+    if (crawlAbortRef.current) crawlAbortRef.current.abort();
+    const controller = new AbortController();
+    crawlAbortRef.current = controller;
+
     setScrapeRunning(true);
     setScrapeResult(null);
     setCrawlProgress(0);
@@ -4951,15 +4967,21 @@ function Admin() {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY },
         body: JSON.stringify(sourceId ? { source_id: sourceId } : {}),
+        signal: controller.signal,
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload?.error || `Failed (${response.status})`);
       setScrapeResult(payload);
       fetchCrawlRuns().then(({ data }) => setCrawlRuns(data || []));
     } catch (err) {
-      setScrapeResult({ error: err.message });
+      if (err.name === "AbortError") {
+        setScrapeResult({ error: "Crawl cancelled" });
+      } else {
+        setScrapeResult({ error: err.message });
+      }
     }
     clearInterval(interval);
+    crawlAbortRef.current = null;
     setCrawlProgress(100);
     setTimeout(() => { setScrapeRunning(false); setCrawlProgress(0); }, 600);
   };
@@ -5035,7 +5057,10 @@ function Admin() {
       </div>
       {scrapeRunning && (
         <div className="mb16">
-          <div className="ai-pulse mb8"><div className="dot-spin"/>Crawling all sources, extracting jobs, and running match scoring...</div>
+          <div className="flex" style={{justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <div className="ai-pulse" style={{margin:0}}><div className="dot-spin"/>Crawling all sources, extracting jobs, and running match scoring...</div>
+            <button className="btn btn-ghost btn-xs" onClick={cancelCrawl} style={{color:"var(--red)",whiteSpace:"nowrap"}}>✕ Cancel</button>
+          </div>
           <div style={{background:"var(--bg3)",borderRadius:8,height:8,overflow:"hidden"}}>
             <div style={{height:"100%",borderRadius:8,background:"linear-gradient(90deg,var(--gold),var(--gold-light,#f5c842))",width:`${Math.min(crawlProgress,100)}%`,transition:"width 0.4s ease"}}/>
           </div>

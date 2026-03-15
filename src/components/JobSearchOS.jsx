@@ -1644,11 +1644,14 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
       <div className="card-flat mb16">
         <div className="flex items-c g12 flex-wrap">
           <div style={{fontSize:12,fontWeight:500,color:"var(--ink3)",marginRight:4}}>Showing roles for:</div>
-          <select className="input" style={{width:160}} value={trackFilter} onChange={e=>setTrackFilter(e.target.value)}>
+          <select className="input" style={{width:180}} value={trackFilter} onChange={e=>setTrackFilter(e.target.value)}>
             <option value="ib">Investment Banking</option>
-            <option value="consulting">Consulting</option>
-            <option value="product">Product</option>
-            <option value="postgrad">Post-Graduate Path</option>
+            <option value="pe">Private Equity</option>
+            <option value="vc">Venture Capital</option>
+            <option value="consulting">Management Consulting</option>
+            <option value="trading">Sales & Trading</option>
+            <option value="am">Investment Management</option>
+            <option value="tech">Tech & Startups</option>
             <option value="">All Tracks</option>
           </select>
           <select className="input" style={{width:160}} value={levelFilter} onChange={e=>setLevelFilter(e.target.value)}>

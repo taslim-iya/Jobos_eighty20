@@ -1458,375 +1458,388 @@ function Dashboard({ jobs, profile }) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
-   PAGE: JOB DISCOVERY
+   PAGE: JOB BOARD (unified discover + explore)
 ══════════════════════════════════════════════════════════════════════════════ */
-function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
+function JobBoard({ jobs, setJobs, profile }) {
   const { user } = useAuth();
-  const [tab, setTab] = useState("recommended");
-  const [trackFilter, setTrackFilter] = useState(profile.track);
-  const [levelFilter, setLevelFilter] = useState(profile.level);
-  const [locationFilter, setLocationFilter] = useState("London");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [discJobs, setDiscJobs] = useState([]);
-  const [scanning, setScanning] = useState(false);
-  const [scanLog, setScanLog] = useState([]);
-  const [aiSearchQuery, setAiSearchQuery] = useState("");
-  const [aiSearching, setAiSearching] = useState(false);
-  const [aiResults, setAiResults] = useState([]);
+  const [allJobs, setAllJobs] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [savedIds, setSavedIds] = useState(new Set());
 
-  // Load user's jobs from database into discovery view
+  // Filter states
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sourceFilters, setSourceFilters] = useState([]);
+  const [timeFilter, setTimeFilter] = useState("");
+  const [trackFilters, setTrackFilters] = useState([]);
+  const [dateFilter, setDateFilter] = useState("");
+  const [seniorityFilters, setSeniorityFilters] = useState([]);
+  const [payFilters, setPayFilters] = useState([]);
+  const [payCustomMin, setPayCustomMin] = useState("");
+  const [payCustomMax, setPayCustomMax] = useState("");
+  const [companyFilters, setCompanyFilters] = useState([]);
+  const [companySearch, setCompanySearch] = useState("");
+  const [titleFilters, setTitleFilters] = useState([]);
+  const [titleSearch, setTitleSearch] = useState("");
+  const [locationFilter, setLocationFilter] = useState("");
+  const [sortBy, setSortBy] = useState("newest");
+  const [showFilters, setShowFilters] = useState(true);
+
+  // Load all jobs from DB
   useEffect(() => {
     if (!user) return;
-    fetchJobs(user.id).then(({ data }) => {
-      if (data && data.length > 0) {
-        const mapped = data.map(j => ({
-          id: j.id,
-          title: j.title,
-          firm: j.firm,
-          stage: j.stage,
-          deadline: j.deadline || "Rolling",
-          match: j.match_score || 80,
-          tags: j.tags || [],
-          track: j.track,
-          level: j.experience_level,
-          location: j.location,
-          description: j.description || "",
-          source: j.source || "Scraper",
-          url: j.url || "",
-          saved: true,
-        }));
-        setDiscJobs(mapped);
-        setSavedIds(new Set(mapped.map(j => j.id)));
-      }
-    });
+    supabase.from("jobs").select("*").eq("user_id", user.id).order("created_at", { ascending: false }).limit(1000)
+      .then(({ data }) => {
+        setAllJobs(data || []);
+        setSavedIds(new Set((data || []).filter(j => j.stage !== "saved" || j.user_id === user.id).map(j => j.id)));
+        setLoading(false);
+      });
   }, [user]);
 
-  const filtered = discJobs.filter(j => {
-    const matchTrack = !trackFilter || j.track === trackFilter;
-    const matchLevel = !levelFilter || j.level === levelFilter;
-    const matchSearch = !searchQuery || j.title.toLowerCase().includes(searchQuery.toLowerCase()) || j.firm.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchTrack && matchLevel && matchSearch;
+  // Derive unique values for filter options
+  const allSources = [...new Set(allJobs.map(j => j.source).filter(Boolean))].sort();
+  const allCompanies = [...new Set(allJobs.map(j => j.firm).filter(Boolean))].sort();
+  const allTitles = [...new Set(allJobs.map(j => j.title).filter(Boolean))].sort();
+  const filteredCompanies = companySearch ? allCompanies.filter(c => c.toLowerCase().includes(companySearch.toLowerCase())) : allCompanies;
+  const filteredTitles = titleSearch ? allTitles.filter(t => t.toLowerCase().includes(titleSearch.toLowerCase())) : allTitles;
+
+  const TRACK_LABELS = {ib:"Investment Banking",pe:"Private Equity",vc:"Venture Capital",consulting:"Management Consulting",trading:"Sales & Trading",am:"Investment Management",tech:"Tech & Startups"};
+  const SENIORITY_OPTIONS = ["Intern","Graduate","Junior / Entry","Mid-level","Senior / Lead","Unclassified"];
+  const PAY_RANGES = ["£0-30K","£30-50K","£50-75K","£75-100K","£100K+","Not stated"];
+  const UK_CITIES = ["London","Manchester","Birmingham","Edinburgh","Glasgow","Leeds","Bristol","Cambridge","Oxford","Liverpool","Cardiff","Belfast","Newcastle","Nottingham","Sheffield","Southampton","Remote"];
+
+  // Parse salary to number for filtering
+  const parseSalaryK = (s) => {
+    if (!s) return null;
+    const nums = s.replace(/[^0-9.,]/g, " ").trim().split(/\s+/).map(n => parseFloat(n.replace(/,/g, "")));
+    const val = nums.find(n => !isNaN(n));
+    if (!val) return null;
+    return val > 1000 ? val / 1000 : val; // normalize to K
+  };
+
+  const matchesPay = (job) => {
+    if (payFilters.length === 0) return true;
+    const salK = parseSalaryK(job.salary);
+    if (payFilters.includes("Not stated") && !job.salary) return true;
+    if (!salK) return payFilters.includes("Not stated");
+    if (payFilters.includes("Custom") && payCustomMin && payCustomMax) {
+      const min = parseFloat(payCustomMin);
+      const max = parseFloat(payCustomMax);
+      if (salK >= min && salK <= max) return true;
+    }
+    if (payFilters.includes("£0-30K") && salK <= 30) return true;
+    if (payFilters.includes("£30-50K") && salK > 30 && salK <= 50) return true;
+    if (payFilters.includes("£50-75K") && salK > 50 && salK <= 75) return true;
+    if (payFilters.includes("£75-100K") && salK > 75 && salK <= 100) return true;
+    if (payFilters.includes("£100K+") && salK > 100) return true;
+    return false;
+  };
+
+  const matchesTime = (job) => {
+    if (!timeFilter) return true;
+    const date = job.posted_at ? new Date(job.posted_at) : job.created_at ? new Date(job.created_at) : null;
+    if (!date || isNaN(date.getTime())) return false;
+    const now = new Date();
+    const diffMs = now - date;
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    if (timeFilter === "24h") return diffDays <= 1;
+    if (timeFilter === "week") return diffDays <= 7;
+    if (timeFilter === "month") return diffDays <= 30;
+    if (timeFilter === "3months") return diffDays <= 90;
+    if (timeFilter === "6months") return diffDays <= 180;
+    return true;
+  };
+
+  const matchesDate = (job) => {
+    if (!dateFilter) return true;
+    if (dateFilter === "with") return !!job.posted_at;
+    if (dateFilter === "without") return !job.posted_at;
+    return true;
+  };
+
+  const filtered = allJobs.filter(j => {
+    if (searchQuery && !`${j.title} ${j.firm} ${j.description || ""} ${j.location || ""}`.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+    if (sourceFilters.length > 0 && !sourceFilters.includes(j.source)) return false;
+    if (trackFilters.length > 0 && !trackFilters.includes(j.track)) return false;
+    if (seniorityFilters.length > 0 && !seniorityFilters.includes(j.experience_level)) return false;
+    if (companyFilters.length > 0 && !companyFilters.includes(j.firm)) return false;
+    if (titleFilters.length > 0 && !titleFilters.includes(j.title)) return false;
+    if (locationFilter && locationFilter !== "All") {
+      const jLoc = (j.location || "").toLowerCase();
+      if (locationFilter === "Remote") {
+        if (!/remote/i.test(jLoc) && !j.remote_flag) return false;
+      } else {
+        if (!jLoc.includes(locationFilter.toLowerCase())) return false;
+      }
+    }
+    if (!matchesPay(j)) return false;
+    if (!matchesTime(j)) return false;
+    if (!matchesDate(j)) return false;
+    return true;
   });
 
-  const saveJob = (job) => {
-    if (savedIds.has(job.id)) return;
+  const sorted = [...filtered].sort((a, b) => {
+    if (sortBy === "newest") return new Date(b.posted_at || b.created_at) - new Date(a.posted_at || a.created_at);
+    if (sortBy === "oldest") return new Date(a.posted_at || a.created_at) - new Date(b.posted_at || b.created_at);
+    if (sortBy === "company") return (a.firm || "").localeCompare(b.firm || "");
+    return 0;
+  });
+
+  const saveJob = async (job) => {
+    if (!user || savedIds.has(job.id)) return;
     setSavedIds(prev => new Set([...prev, job.id]));
-    const newJob = { id: Date.now(), title: job.title, firm: job.firm, stage: "saved", deadline: job.deadline, match: job.match, tags: job.tags, track: job.track, level: job.level };
-    setJobs(prev => [...prev, newJob]);
+    const { data } = await upsertJob(user.id, {
+      title: job.title, firm: job.firm, stage: "saved", url: job.url || job.apply_url,
+      description: job.description, location: job.location, tags: job.tags || [],
+      source: job.source || "Job Board", track: job.track, level: job.experience_level,
+    });
+    if (data) setJobs(prev => [{ id: data.id, title: data.title, firm: data.firm, stage: data.stage, deadline: data.deadline || "", tags: data.tags || [], match: data.match_score || 0, track: data.track, level: data.experience_level, location: data.location, url: data.url, source: data.source }, ...prev]);
   };
 
-  const runWebsiteScan = async () => {
-    setScanning(true);
-    setScanLog([]);
-    const trackNames = {ib:"investment banking",pe:"private equity",vc:"venture capital",consulting:"management consulting",trading:"sales and trading",am:"investment management",tech:"tech startups"};
-    const trackName = trackNames[trackFilter] || "finance";
-    const trackKw = {
-      ib: "investment banking analyst associate M&A ECM DCM summer analyst leveraged finance",
-      pe: "private equity analyst associate buyout LBO portfolio company",
-      vc: "venture capital analyst associate startup funding seed series",
-      consulting: "management consulting business analyst strategy consultant associate",
-      trading: "sales trading trader structuring market making fixed income equities",
-      am: "asset management portfolio manager investment analyst fund manager wealth",
-      tech: "software engineer product manager startup technology developer growth",
-    };
-
-    try {
-      setScanLog(["🔄 Crawling live job pages and filtering out expired postings..."]);
-
-      const crawled = await crawlJobs({
-        query: `${trackKw[trackFilter] || trackKw.ib} ${levelFilter || ""} ${locationFilter || ""}`,
-        track: trackFilter,
-        level: levelFilter,
-        location: locationFilter,
-      });
-
-      const liveJobs = dedupeJobsByUrl(normalizeLiveJobs(crawled, "Crawler"));
-
-      if (liveJobs.length === 0) {
-        setScanLog(prev => [...prev, "⚠ No live results from crawler. Trying AI fallback..."]);
-
-        const fallbackPrompt = `Find current, non-expired job openings in ${trackName} for ${levelFilter === "undergrad" ? "undergraduates/graduates/summer analysts" : "experienced professionals"} in ${locationFilter || "major financial hubs"}.\n\nReturn ONLY valid JSON array with real URLs and no expired roles.`;
-        const result = await callClaude(fallbackPrompt, "You are a job search assistant. Return ONLY valid JSON array. No markdown, no explanation.", true);
-        const clean = result.replace(/```json|```/g, "").trim();
-        const start = clean.indexOf("[");
-        const end = clean.lastIndexOf("]") + 1;
-        if (start >= 0) {
-          const parsed = JSON.parse(clean.slice(start, end));
-          const withId = normalizeLiveJobs(parsed, "AI Fallback").map((j, i) => ({
-            ...j,
-            id: 300 + Date.now() + i,
-            track: trackFilter,
-            level: levelFilter,
-            saved: false,
-            tags: j.tags?.length ? j.tags : [({ib:"IB",pe:"PE",vc:"VC",consulting:"Consulting",trading:"S&T",am:"IM",tech:"Tech"})[trackFilter]||trackFilter],
-          }));
-
-          setDiscJobs(prev => {
-            const existingUrls = new Set(prev.map(j => (j.url || "").toLowerCase()));
-            const newJobs = withId.filter(j => !existingUrls.has((j.url || "").toLowerCase()));
-            return [...newJobs, ...prev];
-          });
-          setScanLog(prev => [...prev, `✓ Found ${withId.length} live roles (AI fallback).`]);
-        } else {
-          setScanLog(prev => [...prev, "⚠ Could not parse fallback results."]);
-        }
-      } else {
-        const withId = liveJobs.map((j, i) => ({
-          ...j,
-          id: 300 + Date.now() + i,
-          track: trackFilter,
-          level: levelFilter,
-          saved: false,
-          tags: j.tags?.length ? j.tags : [({ib:"IB",pe:"PE",vc:"VC",consulting:"Consulting",trading:"S&T",am:"IM",tech:"Tech"})[trackFilter]||trackFilter],
-        }));
-
-        setDiscJobs(prev => {
-          const existingUrls = new Set(prev.map(j => (j.url || "").toLowerCase()));
-          const newJobs = withId.filter(j => !existingUrls.has((j.url || "").toLowerCase()));
-          return [...newJobs, ...prev];
-        });
-        setScanLog(prev => [...prev, `✓ Found ${withId.length} live ${trackName} roles with real links.`]);
-      }
-    } catch (err) {
-      setScanLog(prev => [...prev, `⚠ Scan failed: ${err.message}.`]);
-    }
-    setScanning(false);
+  const getOutUrl = (url) => {
+    if (!url) return "#";
+    let cleaned = url.trim();
+    if (!/^https?:\/\//i.test(cleaned)) cleaned = `https://${cleaned}`;
+    return `/out?u=${encodeURIComponent(cleaned)}`;
   };
 
-  const runAiSearch = async () => {
-    if (!aiSearchQuery.trim()) return;
-    setAiSearching(true);
-    setAiResults([]);
-    try {
-      const crawled = await crawlJobs({
-        query: aiSearchQuery,
-        track: trackFilter,
-        level: levelFilter,
-        location: locationFilter,
-      });
+  const toggleMulti = (arr, setArr, val) => {
+    setArr(prev => prev.includes(val) ? prev.filter(v => v !== val) : [...prev, val]);
+  };
 
-      const withId = dedupeJobsByUrl(normalizeLiveJobs(crawled, "Crawler"))
-        .map((j, i) => ({
-          ...j,
-          id: 200 + Date.now() + i,
-          track: trackFilter,
-          level: levelFilter,
-          saved: false,
-          source: j.source || "AI Search",
-          tags: j.tags?.length ? j.tags : [({ib:"IB",pe:"PE",vc:"VC",consulting:"Consulting",trading:"S&T",am:"IM",tech:"Tech"})[trackFilter]||trackFilter],
-        }));
+  const clearAll = () => {
+    setSearchQuery(""); setSourceFilters([]); setTimeFilter(""); setTrackFilters([]);
+    setDateFilter(""); setSeniorityFilters([]); setPayFilters([]); setPayCustomMin(""); setPayCustomMax("");
+    setCompanyFilters([]); setCompanySearch(""); setTitleFilters([]); setTitleSearch(""); setLocationFilter(""); setSortBy("newest");
+  };
 
-      setAiResults(withId);
+  const activeFilterCount = [sourceFilters.length > 0, !!timeFilter, trackFilters.length > 0, !!dateFilter, seniorityFilters.length > 0, payFilters.length > 0, companyFilters.length > 0, titleFilters.length > 0, !!locationFilter].filter(Boolean).length;
 
-      setDiscJobs(prev => {
-        const existingUrls = new Set(prev.map(j => (j.url || "").toLowerCase()));
-        const newJobs = withId.filter(j => !existingUrls.has((j.url || "").toLowerCase()));
-        return [...newJobs, ...prev];
-      });
-    } catch {
-      setAiResults([]);
-    }
-    setAiSearching(false);
+  const FilterSection = ({ title, children, defaultOpen = false }) => {
+    const [open, setOpen] = useState(defaultOpen);
+    return (
+      <div style={{borderBottom:"1px solid var(--border)",paddingBottom:10,marginBottom:10}}>
+        <div onClick={() => setOpen(!open)} style={{cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,fontWeight:600,color:"var(--ink2)"}}>
+          {title} <span style={{fontSize:10}}>{open ? "▾" : "▸"}</span>
+        </div>
+        {open && <div style={{marginTop:8}}>{children}</div>}
+      </div>
+    );
+  };
+
+  const CheckboxList = ({ items, selected, toggle, max = 8, searchable, searchVal, setSearch }) => {
+    const display = searchable ? items.filter(i => !searchVal || i.toLowerCase().includes(searchVal.toLowerCase())).slice(0, 50) : items.slice(0, max);
+    return (
+      <div>
+        {searchable && <input className="input" style={{fontSize:11,padding:"4px 8px",marginBottom:6}} placeholder="Search..." value={searchVal} onChange={e => setSearch(e.target.value)} />}
+        <div style={{maxHeight:160,overflowY:"auto"}}>
+          {display.map(item => (
+            <label key={item} style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"var(--ink2)",cursor:"pointer",padding:"2px 0"}}>
+              <input type="checkbox" checked={selected.includes(item)} onChange={() => toggle(selected, items === allCompanies ? setCompanyFilters : items === allTitles ? setTitleFilters : items === allSources ? setSourceFilters : () => {}, item)} style={{accentColor:"var(--gold)"}} />
+              <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+    );
   };
 
   return (
     <div className="page">
       <div className="section-header">
-        <div>
-          <div className="eyebrow">Job Discovery</div>
-          <div className="section-title">Find & Match Roles</div>
-        </div>
-      
-      </div>
-
-      {/* Profile Filters */}
-      <div className="card-flat mb16">
-        <div className="flex items-c g12 flex-wrap">
-          <div style={{fontSize:12,fontWeight:500,color:"var(--ink3)",marginRight:4}}>Showing roles for:</div>
-          <select className="input" style={{width:180}} value={trackFilter} onChange={e=>setTrackFilter(e.target.value)}>
-            <option value="ib">Investment Banking</option>
-            <option value="pe">Private Equity</option>
-            <option value="vc">Venture Capital</option>
-            <option value="consulting">Management Consulting</option>
-            <option value="trading">Sales & Trading</option>
-            <option value="am">Investment Management</option>
-            <option value="tech">Tech & Startups</option>
-            <option value="">All Tracks</option>
-          </select>
-          <select className="input" style={{width:160}} value={levelFilter} onChange={e=>setLevelFilter(e.target.value)}>
-            <option value="undergrad">Undergraduate</option>
-            <option value="experienced">Experienced Hire</option>
-            <option value="">All Levels</option>
-          </select>
-          <select className="input" style={{width:160}} value={locationFilter} onChange={e=>setLocationFilter(e.target.value)}>
-            <option value="">All Locations</option>
-            <option value="London">London</option>
-            <option value="New York">New York</option>
-            <option value="Hong Kong">Hong Kong</option>
-            <option value="Singapore">Singapore</option>
-            <option value="Dubai">Dubai</option>
-            <option value="Frankfurt">Frankfurt</option>
-            <option value="Paris">Paris</option>
-            <option value="Chicago">Chicago</option>
-            <option value="San Francisco">San Francisco</option>
-            <option value="Toronto">Toronto</option>
-            <option value="Sydney">Sydney</option>
-            <option value="Mumbai">Mumbai</option>
-          </select>
-          <input className="input" style={{flex:1, minWidth:180}} placeholder="Search roles..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)}/>
-          <button className="btn btn-primary btn-sm" onClick={()=>{setTrackFilter(profile.track);setLevelFilter(profile.level);}}>Reset to Profile</button>
+        <div><div className="eyebrow">Browse</div><div className="section-title">Job Board</div></div>
+        <div className="flex g8 items-c">
+          <span className="tag t-gold">{sorted.length} of {allJobs.length} roles</span>
+          <button className="btn btn-outline btn-sm" onClick={() => setShowFilters(!showFilters)}>
+            {showFilters ? "Hide" : "Show"} Filters {activeFilterCount > 0 && `(${activeFilterCount})`}
+          </button>
+          {activeFilterCount > 0 && <button className="btn btn-ghost btn-xs" onClick={clearAll} style={{color:"var(--red)"}}>✕ Clear all</button>}
         </div>
       </div>
 
-      {/* Scan log */}
-      {scanLog.length > 0 && (
-        <div className="alert a-green mb16">
-          <div>
-            {scanLog.map((l,i) => <div key={i} className="mono fs11">{l}</div>)}
-          </div>
-        </div>
-      )}
+      <div style={{display:"grid",gridTemplateColumns: showFilters ? "240px 1fr" : "1fr",gap:16}}>
+        {/* ─── FILTER SIDEBAR ─── */}
+        {showFilters && (
+          <div className="card" style={{height:"fit-content",position:"sticky",top:16,maxHeight:"calc(100vh - 100px)",overflowY:"auto"}}>
+            {/* Search */}
+            <div style={{marginBottom:12}}>
+              <label className="label" style={{fontSize:11}}>🔍 Keyword Search</label>
+              <input className="input" style={{fontSize:12}} placeholder="Search roles, companies..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+            </div>
 
-      <div className="tabs">
-        {["recommended","ai search","all roles"].map(t=>(
-          <div key={t} className={`tab ${tab===t?"active":""}`} onClick={()=>setTab(t)} style={{textTransform:"capitalize"}}>{t}</div>
-        ))}
-      </div>
+            {/* Location */}
+            <div style={{marginBottom:12}}>
+              <label className="label" style={{fontSize:11}}>📍 Location</label>
+              <select className="input" style={{fontSize:12}} value={locationFilter} onChange={e => setLocationFilter(e.target.value)}>
+                <option value="">All Locations</option>
+                {UK_CITIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
 
-      {tab === "recommended" && (
-        <div>
-          <div className="alert a-gold mb16">
-            ✨ <span>Recommendations based on your <strong>{({ib:"IB",pe:"PE",vc:"VC",consulting:"Consulting",trading:"Sales & Trading",am:"Investment Mgmt",tech:"Tech & Startups"})[trackFilter]||trackFilter} {levelFilter === "undergrad" ? "Undergrad" : "Experienced"}</strong> profile, CV, and location preference (<strong>{locationFilter || "All"}</strong>).</span>
-          </div>
-          <div className="grid g-auto">
-            {filtered.map(job => (
-              <div key={job.id} className={`job-card ${savedIds.has(job.id)?"saved":""}`}>
-                <div className="jc-match">{job.match}% match</div>
-                <div className="jc-title">{job.title}</div>
-                <div className="jc-firm">{job.firm} · {job.location || "London"}</div>
-                <div className="jc-tags">
-                  {job.tags.map(t=><span key={t} className="tag t-navy">{t}</span>)}
-                  <span className="tag t-ink">{job.level === "undergrad" ? "Undergrad" : "Experienced"}</span>
+            {/* Sort */}
+            <div style={{marginBottom:12}}>
+              <label className="label" style={{fontSize:11}}>↕ Sort by</label>
+              <select className="input" style={{fontSize:12}} value={sortBy} onChange={e => setSortBy(e.target.value)}>
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="company">Company A-Z</option>
+              </select>
+            </div>
+
+            {/* Source */}
+            <FilterSection title={`Source${sourceFilters.length ? ` (${sourceFilters.length})` : ""}`}>
+              {allSources.map(s => (
+                <label key={s} style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"var(--ink2)",cursor:"pointer",padding:"2px 0"}}>
+                  <input type="checkbox" checked={sourceFilters.includes(s)} onChange={() => toggleMulti(sourceFilters, setSourceFilters, s)} style={{accentColor:"var(--gold)"}} />
+                  {s}
+                </label>
+              ))}
+            </FilterSection>
+
+            {/* Time */}
+            <FilterSection title="Time Posted">
+              {[{v:"24h",l:"Past 24 hours"},{v:"week",l:"Past week"},{v:"month",l:"Past month"},{v:"3months",l:"Past 3 months"},{v:"6months",l:"Past 6 months"}].map(t => (
+                <label key={t.v} style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"var(--ink2)",cursor:"pointer",padding:"2px 0"}}>
+                  <input type="radio" name="time" checked={timeFilter === t.v} onChange={() => setTimeFilter(timeFilter === t.v ? "" : t.v)} style={{accentColor:"var(--gold)"}} />
+                  {t.l}
+                </label>
+              ))}
+            </FilterSection>
+
+            {/* Job Category / Track */}
+            <FilterSection title={`Job Category${trackFilters.length ? ` (${trackFilters.length})` : ""}`} defaultOpen>
+              {Object.entries(TRACK_LABELS).map(([k, l]) => (
+                <label key={k} style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"var(--ink2)",cursor:"pointer",padding:"2px 0"}}>
+                  <input type="checkbox" checked={trackFilters.includes(k)} onChange={() => toggleMulti(trackFilters, setTrackFilters, k)} style={{accentColor:"var(--gold)"}} />
+                  {l}
+                </label>
+              ))}
+            </FilterSection>
+
+            {/* With/Without Date */}
+            <FilterSection title="Date Availability">
+              {[{v:"with",l:"With a date"},{v:"without",l:"Without a date"}].map(t => (
+                <label key={t.v} style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"var(--ink2)",cursor:"pointer",padding:"2px 0"}}>
+                  <input type="radio" name="dateAvail" checked={dateFilter === t.v} onChange={() => setDateFilter(dateFilter === t.v ? "" : t.v)} style={{accentColor:"var(--gold)"}} />
+                  {t.l}
+                </label>
+              ))}
+            </FilterSection>
+
+            {/* Seniority */}
+            <FilterSection title={`Seniority${seniorityFilters.length ? ` (${seniorityFilters.length})` : ""}`}>
+              {SENIORITY_OPTIONS.map(s => (
+                <label key={s} style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"var(--ink2)",cursor:"pointer",padding:"2px 0"}}>
+                  <input type="checkbox" checked={seniorityFilters.includes(s)} onChange={() => toggleMulti(seniorityFilters, setSeniorityFilters, s)} style={{accentColor:"var(--gold)"}} />
+                  {s}
+                </label>
+              ))}
+            </FilterSection>
+
+            {/* Pay Range */}
+            <FilterSection title={`Pay Range${payFilters.length ? ` (${payFilters.length})` : ""}`}>
+              {PAY_RANGES.map(p => (
+                <label key={p} style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"var(--ink2)",cursor:"pointer",padding:"2px 0"}}>
+                  <input type="checkbox" checked={payFilters.includes(p)} onChange={() => toggleMulti(payFilters, setPayFilters, p)} style={{accentColor:"var(--gold)"}} />
+                  {p}
+                </label>
+              ))}
+              <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"var(--ink2)",cursor:"pointer",padding:"2px 0"}}>
+                <input type="checkbox" checked={payFilters.includes("Custom")} onChange={() => toggleMulti(payFilters, setPayFilters, "Custom")} style={{accentColor:"var(--gold)"}} />
+                Custom range
+              </label>
+              {payFilters.includes("Custom") && (
+                <div className="flex g6" style={{marginTop:4}}>
+                  <input className="input" style={{width:60,fontSize:11,padding:"3px 6px"}} placeholder="Min K" value={payCustomMin} onChange={e => setPayCustomMin(e.target.value)} />
+                  <span style={{fontSize:10,color:"var(--ink4)"}}>—</span>
+                  <input className="input" style={{width:60,fontSize:11,padding:"3px 6px"}} placeholder="Max K" value={payCustomMax} onChange={e => setPayCustomMax(e.target.value)} />
                 </div>
-                <div style={{fontSize:12,color:"var(--ink3)",marginBottom:12,lineHeight:1.6}}>{job.description}</div>
-                <div className="jc-foot">
-                  <div className="jc-source">{job.source} · ⏰ {job.deadline}</div>
-                  <div className="flex g8">
-                    {job.url && <a href={job.url} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-xs" style={{textDecoration:"none"}}>Apply →</a>}
-                    {savedIds.has(job.id)
-                      ? <span className="tag t-green">✓ Saved</span>
-                      : <button className="btn btn-primary btn-xs" onClick={()=>saveJob(job)}>+ Save to Pipeline</button>
-                    }
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+              )}
+            </FilterSection>
 
-      {tab === "ai search" && (
-        <div>
-          <div className="card mb20">
-            <div className="card-header">
-              <div>
-                <div className="card-title">AI-Powered Job Search</div>
-                <div className="card-subtitle">Crawler-backed web search for live openings with real application links</div>
-              </div>
-            </div>
-            <div className="flex g10 mb8">
-              <input
-                className="input flex-1"
-                placeholder='e.g. "investment banking analyst 2025 London" or "consulting summer internship"'
-                value={aiSearchQuery}
-                onChange={e=>setAiSearchQuery(e.target.value)}
-                onKeyDown={e=>e.key==="Enter"&&runAiSearch()}
-                style={{fontSize:13}}
-              />
-              <button className="btn btn-gold" onClick={runAiSearch} disabled={aiSearching} style={{whiteSpace:"nowrap"}}>
-                {aiSearching ? "🔄 Searching..." : "✨ AI Search"}
-              </button>
-            </div>
-            <div className="fs11 t-ink4">Searches live web sources and removes expired postings automatically; if crawler is unavailable it falls back gracefully.</div>
-          </div>
-
-          {aiSearching && (
-            <div className="ai-pulse">
-              <div className="dot-spin"/>
-              <div>Searching the web for <strong>{aiSearchQuery}</strong> — matching to your {({ib:"IB",pe:"PE",vc:"VC",consulting:"Consulting",trading:"S&T",am:"IM",tech:"Tech"})[trackFilter]||trackFilter} {levelFilter} profile...</div>
-            </div>
-          )}
-
-          {aiResults.length > 0 && (
-            <div>
-              <div className="alert a-blue mb16">🔍 Found {aiResults.length} results for "{aiSearchQuery}"</div>
-              <div className="grid g-auto">
-                {aiResults.map(job=>(
-                  <div key={job.id} className="job-card">
-                    <div className="jc-match">{job.match}% match</div>
-                    <div className="jc-title">{job.title}</div>
-                    <div className="jc-firm">{job.firm} · {job.location}</div>
-                    <div className="jc-tags">
-                      {(job.tags||[]).map(t=><span key={t} className="tag t-navy">{t}</span>)}
-                    </div>
-                    <div style={{fontSize:12,color:"var(--ink3)",marginBottom:12,lineHeight:1.6}}>{job.description}</div>
-                    <div className="jc-foot">
-                      <div className="jc-source">AI Search · ⏰ {job.deadline}</div>
-                      <div className="flex g8">
-                        {job.url && <a href={job.url} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-xs" style={{textDecoration:"none"}}>Apply →</a>}
-                        <button className="btn btn-primary btn-xs" onClick={()=>saveJob(job)}>+ Save</button>
-                      </div>
-                    </div>
-                  </div>
+            {/* Company */}
+            <FilterSection title={`Company${companyFilters.length ? ` (${companyFilters.length})` : ""}`}>
+              <input className="input" style={{fontSize:11,padding:"4px 8px",marginBottom:6}} placeholder="Search companies..." value={companySearch} onChange={e => setCompanySearch(e.target.value)} />
+              <div style={{maxHeight:140,overflowY:"auto"}}>
+                {filteredCompanies.slice(0, 50).map(c => (
+                  <label key={c} style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"var(--ink2)",cursor:"pointer",padding:"2px 0"}}>
+                    <input type="checkbox" checked={companyFilters.includes(c)} onChange={() => toggleMulti(companyFilters, setCompanyFilters, c)} style={{accentColor:"var(--gold)"}} />
+                    <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c}</span>
+                  </label>
                 ))}
               </div>
-            </div>
-          )}
+            </FilterSection>
 
-          {!aiSearching && aiResults.length === 0 && (
-            <div className="card-tinted" style={{textAlign:"center",padding:"40px 24px"}}>
-              <div style={{fontSize:32,marginBottom:12}}>🔍</div>
-              <div style={{fontFamily:"Cormorant Garamond, serif",fontSize:18,fontWeight:700,color:"var(--ink)",marginBottom:8}}>Search the Web for Live Jobs</div>
-              <div style={{fontSize:13,color:"var(--ink3)"}}>Type a search query above. AI will find relevant roles and link directly to job boards like LinkedIn, Indeed, and company career pages.</div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {tab === "all roles" && (
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">All Discovered Roles</div>
-            <span className="tag t-gold">{discJobs.length} roles</span>
+            {/* Job Title */}
+            <FilterSection title={`Job Title${titleFilters.length ? ` (${titleFilters.length})` : ""}`}>
+              <input className="input" style={{fontSize:11,padding:"4px 8px",marginBottom:6}} placeholder="Search titles..." value={titleSearch} onChange={e => setTitleSearch(e.target.value)} />
+              <div style={{maxHeight:140,overflowY:"auto"}}>
+                {filteredTitles.slice(0, 50).map(t => (
+                  <label key={t} style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"var(--ink2)",cursor:"pointer",padding:"2px 0"}}>
+                    <input type="checkbox" checked={titleFilters.includes(t)} onChange={() => toggleMulti(titleFilters, setTitleFilters, t)} style={{accentColor:"var(--gold)"}} />
+                    <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t}</span>
+                  </label>
+                ))}
+              </div>
+            </FilterSection>
           </div>
-          <table className="table">
-            <thead><tr><th>Role</th><th>Firm</th><th>Location</th><th>Track</th><th>Level</th><th>Deadline</th><th>Match</th><th>Action</th></tr></thead>
-            <tbody>
-              {discJobs.map(j=>(
-                <tr key={j.id}>
-                  <td className="fw6" style={{color:"var(--ink)"}}>{j.title}</td>
-                  <td>{j.firm}</td>
-                  <td style={{fontSize:12,color:"var(--ink3)"}}>{j.location||"London"}</td>
-                  <td><span className="tag t-navy">{j.track}</span></td>
-                  <td><span className="tag t-ink">{j.level}</span></td>
-                  <td><span className="mono" style={{color:"var(--gold)",fontSize:11}}>{j.deadline}</span></td>
-                  <td><span className="mono" style={{color:"var(--green)",fontSize:12}}>{j.match}%</span></td>
-                  <td>
-                    <div className="flex g6">
-                      {j.url && <a href={j.url} target="_blank" rel="noopener noreferrer" className="btn btn-gold btn-xs" style={{textDecoration:"none"}}>Apply →</a>}
-                      {savedIds.has(j.id)
-                        ? <span className="tag t-green fs11">✓ Saved</span>
-                        : <button className="btn btn-outline btn-xs" onClick={()=>saveJob(j)}>+ Pipeline</button>
-                      }
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        )}
+
+        {/* ─── JOB LIST ─── */}
+        <div>
+          {loading ? (
+            <div className="ai-pulse"><div className="dot-spin"/>Loading jobs...</div>
+          ) : sorted.length === 0 ? (
+            <div className="card-tinted" style={{textAlign:"center",padding:"48px 24px"}}>
+              <div style={{fontSize:40,marginBottom:14}}>📋</div>
+              <div style={{fontFamily:"Cormorant Garamond,serif",fontSize:20,fontWeight:700,color:"var(--ink)",marginBottom:8}}>No Roles Found</div>
+              <div className="fs13 t-ink3">Try adjusting your filters or wait for the next crawl to populate new roles.</div>
+            </div>
+          ) : (
+            <div className="card" style={{overflow:"auto"}}>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Role</th>
+                    <th>Company</th>
+                    <th>Location</th>
+                    <th>Category</th>
+                    <th>Seniority</th>
+                    <th>Salary</th>
+                    <th>Type</th>
+                    <th>Source</th>
+                    <th>Posted</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sorted.map(j => (
+                    <tr key={j.id}>
+                      <td className="fw6" style={{color:"var(--ink)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                        {j.url ? <a href={getOutUrl(j.url)} target="_blank" rel="noopener noreferrer" style={{color:"var(--ink)",textDecoration:"underline"}}>{j.title}</a> : j.title}
+                      </td>
+                      <td style={{maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{j.firm}</td>
+                      <td style={{fontSize:11,color:"var(--ink3)"}}>{j.location || "—"}</td>
+                      <td><span className="tag t-navy" style={{fontSize:10}}>{TRACK_LABELS[j.track] || j.track || "—"}</span></td>
+                      <td style={{fontSize:11,color:"var(--ink3)"}}>{j.experience_level || "—"}</td>
+                      <td style={{fontSize:11,color: j.salary ? "var(--green)" : "var(--ink4)"}}>{j.salary || "—"}</td>
+                      <td style={{fontSize:11,color:"var(--ink3)"}}>{j.job_type || "—"}</td>
+                      <td><span className="tag" style={{background: j.source === "LinkedIn" ? "var(--blue-bg,rgba(59,130,246,0.1))" : "var(--gold-bg)", color: j.source === "LinkedIn" ? "var(--blue,#3b82f6)" : "var(--gold)", fontSize:10}}>{j.source || "Crawler"}</span></td>
+                      <td className="mono fs11">{j.posted_at ? new Date(j.posted_at).toLocaleDateString() : "—"}</td>
+                      <td>
+                        {savedIds.has(j.id) ? (
+                          <span className="tag t-green fs11">✓ Saved</span>
+                        ) : (
+                          <button className="btn btn-primary btn-xs" onClick={() => saveJob(j)}>+ Save</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

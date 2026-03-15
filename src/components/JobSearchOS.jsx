@@ -3550,8 +3550,12 @@ function Interview() {
 
 Include a mix of categories:
 ${selectedTrack === "ib" ? "- Technical (DCF, LBO, M&A, Accounting)\n- Behavioral (leadership, teamwork, fit)\n- Market/Deals (current events, deal analysis)" :
+  selectedTrack === "pe" ? "- Technical (LBO modeling, due diligence, portfolio ops)\n- Behavioral (leadership, deal experience)\n- Market (current PE landscape, deals)" :
+  selectedTrack === "vc" ? "- Technical (startup valuation, cap tables, term sheets)\n- Market (sectors, trends, portfolio analysis)\n- Behavioral (sourcing, founder evaluation)" :
   selectedTrack === "consulting" ? "- Case Study (profitability, market entry, M&A)\n- Market Sizing (estimation questions)\n- Behavioral (leadership, impact, fit)" :
-  "- Product Design (new product, improvement)\n- Metrics/Analytics (data-driven decisions)\n- Leadership (cross-functional, strategy)"}
+  selectedTrack === "trading" ? "- Technical (pricing, risk, derivatives, Greeks)\n- Market (macro, rates, FX, current events)\n- Behavioral (pressure, quick decisions)" :
+  selectedTrack === "am" ? "- Technical (portfolio construction, equity research, valuation)\n- Market (macro themes, sector analysis)\n- Behavioral (investment philosophy, teamwork)" :
+  "- Product Design (new product, improvement)\n- Technical (system design, coding)\n- Leadership (cross-functional, strategy)"}
 
 Return ONLY a JSON array: [{"q":"...","cat":"...","diff":"Core or Advanced"}]`;
     try {

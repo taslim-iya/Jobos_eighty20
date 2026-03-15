@@ -3164,7 +3164,7 @@ ${textContent.slice(0, 8000)}`;
           source: j.source || "File Upload",
           url: j.url || "",
           match: 80,
-          tags: j.track === "ib" ? ["IB"] : j.track === "consulting" ? ["Consulting"] : ["Product"],
+          tags: [({ib:"IB",pe:"PE",vc:"VC",consulting:"Consulting",trading:"S&T",am:"IM",tech:"Tech"})[j.track]||j.track||"IB"],
         });
         if (!error) inserted++;
       }

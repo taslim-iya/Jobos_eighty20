@@ -5033,7 +5033,15 @@ function Admin() {
           <span className="tag t-red">Owner Only</span>
         
       </div>
-      {scrapeRunning && <div className="ai-pulse mb16"><div className="dot-spin"/>Crawling all sources, extracting jobs, and running match scoring...</div>}
+      {scrapeRunning && (
+        <div className="mb16">
+          <div className="ai-pulse mb8"><div className="dot-spin"/>Crawling all sources, extracting jobs, and running match scoring...</div>
+          <div style={{background:"var(--bg3)",borderRadius:8,height:8,overflow:"hidden"}}>
+            <div style={{height:"100%",borderRadius:8,background:"linear-gradient(90deg,var(--gold),var(--gold-light,#f5c842))",width:`${Math.min(crawlProgress,100)}%`,transition:"width 0.4s ease"}}/>
+          </div>
+          <div className="fs12 t-ink3 mt4" style={{textAlign:"right"}}>{Math.round(Math.min(crawlProgress,100))}%</div>
+        </div>
+      )}
       {scrapeResult && !scrapeResult.error && adminTab !== "crawl" && (
         <div className="alert a-green mb16">✅ Pipeline complete! Crawled <strong>{scrapeResult.sources_crawled}</strong> sources, inserted <strong>{scrapeResult.jobs_inserted}</strong> jobs, created <strong>{scrapeResult.matches_created}</strong> profile matches.</div>
       )}

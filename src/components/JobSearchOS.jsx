@@ -1519,12 +1519,16 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
   const runWebsiteScan = async () => {
     setScanning(true);
     setScanLog([]);
-    const trackName = trackFilter === "ib" ? "investment banking" : trackFilter === "consulting" ? "management consulting" : trackFilter === "postgrad" ? "graduate program" : "product management";
+    const trackNames = {ib:"investment banking",pe:"private equity",vc:"venture capital",consulting:"management consulting",trading:"sales and trading",am:"investment management",tech:"tech startups"};
+    const trackName = trackNames[trackFilter] || "finance";
     const trackKw = {
       ib: "investment banking analyst associate M&A ECM DCM summer analyst leveraged finance",
+      pe: "private equity analyst associate buyout LBO portfolio company",
+      vc: "venture capital analyst associate startup funding seed series",
       consulting: "management consulting business analyst strategy consultant associate",
-      product: "product manager APM associate product manager growth PM",
-      postgrad: "graduate program rotational program graduate scheme trainee MBA",
+      trading: "sales trading trader structuring market making fixed income equities",
+      am: "asset management portfolio manager investment analyst fund manager wealth",
+      tech: "software engineer product manager startup technology developer growth",
     };
 
     try {

@@ -5619,8 +5619,7 @@ export default function JobSearchOS() {
     switch (page) {
       case "dashboard":    return <Dashboard jobs={jobs} profile={profile}/>;
       case "recommended":  return <RecommendedJobs jobs={jobs} setJobs={setJobsWithDb} profile={profile}/>;
-      case "discover":     return <JobDiscovery jobs={jobs} setJobs={setJobsWithDb} profile={profile} setProfile={()=>{}}/>;
-      case "explore":      return <ExploreJobs jobs={jobs} setJobs={setJobsWithDb}/>;
+      case "jobs":         return <JobBoard jobs={jobs} setJobs={setJobsWithDb} profile={profile}/>;
       case "websites":     return <WebsiteManager/>;
       case "pipeline":     return <Pipeline jobs={jobs} setJobs={setJobsWithDb}/>;
       case "playbooks":    return <Playbooks/>;

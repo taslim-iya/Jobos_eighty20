@@ -5019,12 +5019,8 @@ function Admin() {
       <input type="file" ref={adminFileRef} style={{display:"none"}} multiple accept=".pdf,.docx,.doc,.txt,.csv,.xlsx,.json" onChange={handleAdminFileUpload}/>
       <div className="section-header">
         <div><div className="eyebrow">Admin Console</div><div className="section-title">Platform Configuration</div></div>
-        <div className="flex g8" style={{alignItems:"center"}}>
-          <button className="btn btn-gold" onClick={() => runCrawlAndMatch()} disabled={scrapeRunning || !isAdmin}>
-            {scrapeRunning ? "⏳ Crawling..." : "🚀 Crawl All"}
-          </button>
           <span className="tag t-red">Owner Only</span>
-        </div>
+        
       </div>
       {scrapeRunning && <div className="ai-pulse mb16"><div className="dot-spin"/>Crawling all sources, extracting jobs, and running match scoring...</div>}
       {scrapeResult && !scrapeResult.error && adminTab !== "crawl" && (
@@ -5054,7 +5050,12 @@ function Admin() {
               <div className="card mb16">
                 <div className="card-header">
                   <div><div className="card-title">🌐 Crawl Sources</div><div className="card-subtitle">Manage websites and career pages to crawl</div></div>
-                  <button className="btn btn-primary btn-sm" onClick={() => setShowAddSource(v => !v)}>+ Add Source</button>
+                   <div className="flex g8">
+                     <button className="btn btn-gold btn-sm" onClick={() => runCrawlAndMatch()} disabled={scrapeRunning || !isAdmin}>
+                       {scrapeRunning ? "⏳ Crawling..." : "🚀 Crawl All"}
+                     </button>
+                     <button className="btn btn-primary btn-sm" onClick={() => setShowAddSource(v => !v)}>+ Add Source</button>
+                   </div>
                 </div>
                 {showAddSource && (
                   <div style={{padding:"16px",background:"var(--surface2)",borderRadius:10,marginBottom:16}}>

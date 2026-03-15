@@ -6,12 +6,25 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-/* ─── JOB BOARD SEARCH QUERIES ───
-   For each job_board source we build Firecrawl /search queries
-   that target the public listings pages. */
+/* ─── CONSTANTS ─── */
+const MAX_LOAD_MORE_CLICKS = 20; // Action budget: stay within Firecrawl 50-action limit
+const LINKEDIN_TIMEOUT_MS = 5 * 60 * 1000; // 5 min for heavy pagination
+const DEFAULT_TIMEOUT_MS = 2 * 60 * 1000; // 2 min for other sources
+const RETRY_ATTEMPTS = 3;
+const MIN_CONTENT_LENGTH = 10_000; // Reject scrapes < 10KB (blocking/error pages)
+const MAX_AGE_DAYS = 180; // 6-month cutoff
+const BATCH_SIZE = 5; // Concurrent batch size for paginated fetches
+const BATCH_DELAY_MS = 500; // Delay between batches
+
+/* ─── SPAM / JUNK FILTERS ─── */
+const JUNK_TITLE_PATTERNS = /\b(newsletter|subscribe|cookie|privacy policy|terms of service|error|page not found|404|sign up|log in|create account)\b/i;
+const NON_JOB_PATTERNS = /\b(how to|what is|guide|tips|salary guide|blog post|news article|report|review|interview prep|top \d+|reddit|quora)\b/i;
+
+/* ─── JOB BOARD SEARCH QUERIES ─── */
 const JOB_BOARD_CONFIGS: Record<string, {
   buildSearchUrl: (keywords: string, location: string) => string;
   searchQueries: (keywords: string, location: string) => string[];
+  isHeavyPagination?: boolean;
 }> = {
   "efinancialcareers": {
     buildSearchUrl: (kw, loc) =>
@@ -52,6 +65,7 @@ const JOB_BOARD_CONFIGS: Record<string, {
       `site:linkedin.com/jobs/view ${kw} ${loc}`,
       `site:linkedin.com/jobs ${kw} ${loc}`,
     ],
+    isHeavyPagination: true,
   },
 };
 
@@ -82,6 +96,92 @@ const AI_EXTRACTION_SCHEMA = {
 const AI_EXTRACTION_PROMPT =
   "Extract ALL job listings visible on this page. For each job, get: title, company name, location, salary (if shown), job type (Full-time/Part-time/Contract/Internship), seniority level (Graduate/Intern/Junior-Entry/Mid-level/Senior-Lead/Unclassified), date posted, description snippet, and the direct job URL. If a field is not available, use null.";
 
+/* ─── RETRY WITH EXPONENTIAL BACKOFF ─── */
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  attempts = RETRY_ATTEMPTS,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<Response> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const resp = await fetch(url, { ...options, signal: controller.signal });
+      clearTimeout(timer);
+
+      if (resp.status === 502 && i < attempts - 1) {
+        const delay = Math.pow(2, i) * 1000 + Math.random() * 500;
+        console.warn(`502 on attempt ${i + 1}, retrying in ${Math.round(delay)}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      return resp;
+    } catch (err: any) {
+      if (err.name === "AbortError") {
+        console.warn(`Request timed out (attempt ${i + 1}/${attempts})`);
+        if (i < attempts - 1) {
+          await new Promise(r => setTimeout(r, Math.pow(2, i) * 1000));
+          continue;
+        }
+      }
+      if (i === attempts - 1) throw err;
+      await new Promise(r => setTimeout(r, Math.pow(2, i) * 1000));
+    }
+  }
+  throw new Error("All retry attempts exhausted");
+}
+
+/* ─── BATCH CONCURRENT FETCHES ─── */
+async function fetchInBatches<T>(
+  items: T[],
+  fn: (item: T) => Promise<any>,
+  batchSize = BATCH_SIZE,
+  delayMs = BATCH_DELAY_MS,
+): Promise<PromiseSettledResult<any>[]> {
+  const results: PromiseSettledResult<any>[] = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const batchResults = await Promise.allSettled(batch.map(fn));
+    results.push(...batchResults);
+    if (i + batchSize < items.length) {
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+  return results;
+}
+
+/* ─── EARLY FILTERING: check if a job passes quality gates ─── */
+function passesEarlyFilter(job: { title?: string; company?: string; posted_at?: string | null; description?: string }): boolean {
+  const title = job.title || "";
+  const desc = job.description || "";
+
+  // Filter junk titles
+  if (JUNK_TITLE_PATTERNS.test(title)) return false;
+  if (NON_JOB_PATTERNS.test(title)) return false;
+
+  // 6-month age cutoff
+  if (job.posted_at) {
+    const posted = new Date(job.posted_at);
+    if (!isNaN(posted.getTime())) {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - MAX_AGE_DAYS);
+      if (posted < cutoff) return false;
+    }
+  }
+
+  // Block spam signals in description
+  if (/\b(unsubscribe|cookie policy|privacy notice|terms of use)\b/i.test(desc.slice(0, 300))) return false;
+
+  return true;
+}
+
+/* ─── CROSS-SOURCE DEDUPLICATION ─── */
+function dedupeKey(title: string, company: string): string {
+  return `${(title || "").toLowerCase().trim()}::${(company || "").toLowerCase().trim()}`;
+}
+
+/* ─── MAIN HANDLER ─── */
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -170,10 +270,10 @@ Deno.serve(async (req) => {
     const searchKeywords = keywords || profileData?.keywords_include?.[0] || "finance analyst";
     const searchLocation = location || profileData?.location || "London";
 
-    let totalInserted = 0;
-    let totalMatches = 0;
+    // ─── SOURCE PARALLELIZATION: Run ALL sources concurrently ───
+    const globalDedup = new Set<string>();
 
-    for (const source of sources) {
+    const crawlOneSource = async (source: any) => {
       const { data: run } = await supabase
         .from("crawl_runs")
         .insert({ source_id: source.id, status: "running" })
@@ -186,9 +286,7 @@ Deno.serve(async (req) => {
         if (source.crawl_type === "job_board") {
           extractedJobs = await crawlJobBoard(source, firecrawlKey, searchKeywords, searchLocation);
         } else {
-          // Legacy crawl types
           const pages = await crawlSource(source, firecrawlKey);
-
           for (const page of pages) {
             const hash = await hashText(page.url + (page.markdown || "").slice(0, 500));
             await supabase.from("raw_pages").upsert(
@@ -196,13 +294,29 @@ Deno.serve(async (req) => {
               { onConflict: "id" }
             );
           }
-
           extractedJobs = await extractJobsFromPages(pages, source);
         }
 
-        // Dedupe and upsert jobs
-        let inserted = 0;
+        // ─── EARLY FILTERING ───
+        extractedJobs = extractedJobs.filter(j => passesEarlyFilter({
+          title: j.title,
+          company: j.company,
+          posted_at: j.posted_at,
+          description: j.description,
+        }));
+
+        // ─── CROSS-SOURCE DEDUPLICATION ───
+        const uniqueJobs: any[] = [];
         for (const job of extractedJobs) {
+          const key = dedupeKey(job.title, job.company);
+          if (globalDedup.has(key)) continue;
+          globalDedup.add(key);
+          uniqueJobs.push(job);
+        }
+
+        // ─── UPSERT WITH CONFLICT RESOLUTION ───
+        let inserted = 0;
+        for (const job of uniqueJobs) {
           const hash = await hashText(job.source_job_url || job.title + job.company);
           const jobRow: Record<string, any> = {
             user_id: requesterUserId,
@@ -230,9 +344,10 @@ Deno.serve(async (req) => {
           };
 
           if (job.source_job_url) {
+            // Upsert preserves user state (stage, match_score) while updating job data
             const { error } = await supabase.from("jobs").upsert(jobRow, {
               onConflict: "user_id,source_job_url",
-              ignoreDuplicates: true,
+              ignoreDuplicates: false, // Update existing records with fresh data
             });
             if (error) {
               console.warn("Job upsert failed", { source_job_url: job.source_job_url, message: error.message });
@@ -247,32 +362,54 @@ Deno.serve(async (req) => {
           }
           inserted++;
         }
-        totalInserted += inserted;
 
         await supabase.from("crawl_runs").update({
           status: "completed",
           ended_at: new Date().toISOString(),
-          pages_crawled: extractedJobs.length,
+          pages_crawled: uniqueJobs.length,
         }).eq("id", run.id);
 
-      } catch (err) {
+        return { source: source.name, inserted, total: uniqueJobs.length };
+      } catch (err: any) {
         console.error(`Crawl error for ${source.name}:`, err);
         await supabase.from("crawl_runs").update({
           status: "failed",
           ended_at: new Date().toISOString(),
           errors: [err.message || "Unknown error"],
         }).eq("id", run?.id);
+        return { source: source.name, inserted: 0, error: err.message };
+      }
+    };
+
+    // ─── Run all sources in parallel via Promise.allSettled ───
+    console.log(`Starting parallel crawl of ${sources.length} sources`);
+    const sourceResults = await Promise.allSettled(sources.map(crawlOneSource));
+
+    let totalInserted = 0;
+    const sourceDetails: any[] = [];
+    for (const result of sourceResults) {
+      if (result.status === "fulfilled") {
+        totalInserted += result.value.inserted;
+        sourceDetails.push(result.value);
+      } else {
+        sourceDetails.push({ error: result.reason?.message || "Unknown" });
       }
     }
 
     // Run matching
-    totalMatches = await runMatching(supabase, requesterUserId);
+    const totalMatches = await runMatching(supabase, requesterUserId);
 
     return new Response(
-      JSON.stringify({ success: true, jobs_inserted: totalInserted, matches_created: totalMatches, sources_crawled: sources.length }),
+      JSON.stringify({
+        success: true,
+        jobs_inserted: totalInserted,
+        matches_created: totalMatches,
+        sources_crawled: sources.length,
+        source_details: sourceDetails,
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-  } catch (err) {
+  } catch (err: any) {
     console.error("Crawl error:", err);
     return new Response(JSON.stringify({ error: err.message || "Crawl failed" }), {
       status: 500,
@@ -281,9 +418,7 @@ Deno.serve(async (req) => {
   }
 });
 
-// ─── JOB BOARD CRAWLING ───
-// Uses Firecrawl /search to find job listings across all 5 sources,
-// then scrapes individual pages for rich extraction.
+/* ─── JOB BOARD CRAWLING (with batch fetching + retries + quality validation) ─── */
 async function crawlJobBoard(
   source: any,
   firecrawlKey: string | undefined,
@@ -297,48 +432,51 @@ async function crawlJobBoard(
 
   const sourceName = source.name.toLowerCase();
   const config = JOB_BOARD_CONFIGS[sourceName];
+  const timeoutMs = config?.isHeavyPagination ? LINKEDIN_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
 
   if (!config) {
     console.warn(`No job board config for: ${source.name}, falling back to search`);
-    return await fallbackSearch(firecrawlKey, source, keywords, location);
+    return await fallbackSearch(firecrawlKey, source, keywords, location, timeoutMs);
   }
 
   const queries = config.searchQueries(keywords, location);
   const allJobs: any[] = [];
   const seenUrls = new Set<string>();
 
-  // Strategy 1: Firecrawl /search for each query
-  for (const query of queries) {
-    try {
-      const searchResp = await fetch("https://api.firecrawl.dev/v1/search", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${firecrawlKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          query,
-          limit: 50,
-          scrapeOptions: { formats: ["markdown"] },
-        }),
-      });
+  // Strategy 1: Firecrawl /search — batch queries concurrently
+  const searchResults = await fetchInBatches(queries, async (query) => {
+    const searchResp = await fetchWithRetry("https://api.firecrawl.dev/v1/search", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${firecrawlKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query,
+        limit: 50,
+        scrapeOptions: { formats: ["markdown"] },
+      }),
+    }, RETRY_ATTEMPTS, timeoutMs);
 
-      const searchData = await searchResp.json();
-      const results = searchData?.data || searchData?.results || [];
+    const searchData = await searchResp.json();
 
-      if (!Array.isArray(results)) continue;
+    // ─── QUALITY VALIDATION: reject thin responses ───
+    const rawText = JSON.stringify(searchData);
+    if (rawText.length < MIN_CONTENT_LENGTH) {
+      console.warn(`Quality check failed for query "${query}": response only ${rawText.length} chars`);
+    }
 
-      for (const result of results) {
-        const url = result.url;
-        if (!url || seenUrls.has(url.toLowerCase())) continue;
-        seenUrls.add(url.toLowerCase());
+    return searchData?.data || searchData?.results || [];
+  }, BATCH_SIZE, BATCH_DELAY_MS);
 
-        // Parse from search result metadata + markdown
-        const job = parseSearchResult(result, source.name);
-        if (job) allJobs.push(job);
-      }
-    } catch (err) {
-      console.warn(`Search query failed for ${source.name}: ${query}`, err);
+  for (const result of searchResults) {
+    if (result.status !== "fulfilled" || !Array.isArray(result.value)) continue;
+    for (const item of result.value) {
+      const url = item.url;
+      if (!url || seenUrls.has(url.toLowerCase())) continue;
+      seenUrls.add(url.toLowerCase());
+      const job = parseSearchResult(item, source.name);
+      if (job) allJobs.push(job);
     }
   }
 
@@ -347,7 +485,7 @@ async function crawlJobBoard(
     const listingUrl = config.buildSearchUrl(keywords, location);
     console.log(`Scraping listing page: ${listingUrl}`);
 
-    const scrapeResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+    const scrapeResp = await fetchWithRetry("https://api.firecrawl.dev/v1/scrape", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${firecrawlKey}`,
@@ -365,10 +503,18 @@ async function crawlJobBoard(
         ],
         onlyMainContent: true,
         waitFor: 10000,
+        actions: config.isHeavyPagination ? buildLoadMoreActions() : undefined,
       }),
-    });
+    }, RETRY_ATTEMPTS, timeoutMs);
 
     const scrapeData = await scrapeResp.json();
+
+    // ─── QUALITY VALIDATION ───
+    const scrapeText = JSON.stringify(scrapeData);
+    if (scrapeText.length < MIN_CONTENT_LENGTH) {
+      console.warn(`Quality check: AI scrape for ${source.name} returned only ${scrapeText.length} chars — may be blocked`);
+    }
+
     const extractedJobs = scrapeData?.data?.json?.jobs || scrapeData?.json?.jobs || [];
 
     for (const ej of extractedJobs) {
@@ -402,30 +548,36 @@ async function crawlJobBoard(
   return allJobs;
 }
 
+/* ─── ACTION BUDGET: Build "Load more" actions capped at MAX_LOAD_MORE_CLICKS ─── */
+function buildLoadMoreActions(): any[] {
+  const actions: any[] = [];
+  for (let i = 0; i < MAX_LOAD_MORE_CLICKS; i++) {
+    actions.push({ type: "click", selector: "button.infinite-scroller__show-more-button, button[aria-label='Load more results'], button.see-more-jobs, a.infinite-scroller__show-more-button", timeout: 3000 });
+    actions.push({ type: "wait", milliseconds: 1500 });
+  }
+  // Final scrape action
+  actions.push({ type: "scrape" });
+  return actions;
+}
+
 function parseSearchResult(result: any, sourceName: string): any | null {
   const url = result.url;
   if (!url) return null;
-
-  // Skip non-job pages
   if (/privacy|terms|about|help|faq|login|signup|cookie/i.test(url)) return null;
 
   const title = result.title?.split("|")[0]?.split(" - ")[0]?.trim() || "Unknown Role";
   const markdown = result.markdown || result.description || "";
 
-  // Try to extract company from title pattern "Role at Company" or "Role - Company"
   const companyMatch = title.match(/(?:at|@)\s+(.+?)(?:\s*[-|]|$)/i) ||
     result.title?.match(/[-|]\s*(.+?)(?:\s*[-|]|$)/);
   const company = companyMatch?.[1]?.trim() || extractDomain(url);
 
-  // Extract salary from markdown
   const salaryMatch = markdown.match(/(?:£|salary[:\s]*£?)[\d,]+(?:\s*[-–to]\s*£?[\d,]+)?(?:\s*(?:per|p\.?a\.|pa|annually|per annum|k))?/i);
   const salary = salaryMatch?.[0] || null;
 
-  // Extract job type
   const jobTypeMatch = markdown.match(/\b(full[- ]?time|part[- ]?time|contract|internship|temporary|permanent|freelance)\b/i);
   const job_type = jobTypeMatch?.[1] || null;
 
-  // Extract date posted
   const dateMatch = markdown.match(/(?:posted|published|listed)\s*:?\s*(\d{1,2}\s+\w+\s+\d{4}|\d+\s+(?:day|hour|week|month)s?\s+ago)/i);
   const posted_at = dateMatch?.[1] ? parseDate(dateMatch[1]) : null;
 
@@ -450,7 +602,6 @@ function parseSearchResult(result: any, sourceName: string): any | null {
 function extractLocation(text: string): string | null {
   const match = text.match(/(?:location|based in|office)[:\s]*([A-Z][a-z]+(?:[\s,]+[A-Z][a-z]+)*)/);
   if (match) return match[1].slice(0, 100);
-  // Common UK locations
   const ukCities = /\b(London|Manchester|Birmingham|Edinburgh|Glasgow|Leeds|Bristol|Cambridge|Oxford|Liverpool|Cardiff)\b/i;
   const cityMatch = text.match(ukCities);
   return cityMatch ? cityMatch[1] : null;
@@ -459,7 +610,7 @@ function extractLocation(text: string): string | null {
 function extractDomain(url: string): string {
   try {
     const host = new URL(url).hostname.replace(/^www\./, "");
-    return host.split(".")[0].replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+    return host.split(".")[0].replace(/[-_]/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
   } catch {
     return "Company";
   }
@@ -503,8 +654,6 @@ function inferTrack(text: string): string | null {
 function parseDate(text: string | null | undefined): string | null {
   if (!text) return null;
   const cleaned = text.trim();
-
-  // Handle "X days/hours/weeks ago"
   const agoMatch = cleaned.match(/(\d+)\s+(day|hour|week|month)s?\s+ago/i);
   if (agoMatch) {
     const n = parseInt(agoMatch[1]);
@@ -516,15 +665,14 @@ function parseDate(text: string | null | undefined): string | null {
     else if (unit === "month") now.setMonth(now.getMonth() - n);
     return now.toISOString();
   }
-
   const parsed = Date.parse(cleaned);
   if (!Number.isNaN(parsed)) return new Date(parsed).toISOString();
   return null;
 }
 
-async function fallbackSearch(firecrawlKey: string, source: any, keywords: string, location: string): Promise<any[]> {
+async function fallbackSearch(firecrawlKey: string, source: any, keywords: string, location: string, timeoutMs: number): Promise<any[]> {
   try {
-    const resp = await fetch("https://api.firecrawl.dev/v1/search", {
+    const resp = await fetchWithRetry("https://api.firecrawl.dev/v1/search", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${firecrawlKey}`,
@@ -535,7 +683,7 @@ async function fallbackSearch(firecrawlKey: string, source: any, keywords: strin
         limit: 30,
         scrapeOptions: { formats: ["markdown"] },
       }),
-    });
+    }, RETRY_ATTEMPTS, timeoutMs);
     const data = await resp.json();
     const results = data?.data || [];
     return results.map((r: any) => parseSearchResult(r, source.name)).filter(Boolean);
@@ -544,7 +692,7 @@ async function fallbackSearch(firecrawlKey: string, source: any, keywords: strin
   }
 }
 
-// ─── LEGACY CRAWL SOURCE (for 'single', 'sitemap', 'list' types) ───
+// ─── LEGACY CRAWL SOURCE ───
 async function crawlSource(source: any, firecrawlKey: string | undefined): Promise<any[]> {
   if (!firecrawlKey) return [];
 
@@ -555,7 +703,7 @@ async function crawlSource(source: any, firecrawlKey: string | undefined): Promi
     : "https://api.firecrawl.dev/v1/crawl";
 
   if (source.crawl_type === "single") {
-    const resp = await fetch(endpoint, {
+    const resp = await fetchWithRetry(endpoint, {
       method: "POST",
       headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({ url: source.base_url, formats: ["markdown"], onlyMainContent: true }),
@@ -567,7 +715,7 @@ async function crawlSource(source: any, firecrawlKey: string | undefined): Promi
 
   if (source.crawl_type === "sitemap") {
     console.log("Scraping markdown table from:", source.base_url);
-    const tableResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+    const tableResp = await fetchWithRetry("https://api.firecrawl.dev/v1/scrape", {
       method: "POST",
       headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({ url: source.base_url, formats: ["markdown"], onlyMainContent: true, waitFor: 10000 }),
@@ -639,7 +787,7 @@ async function crawlSource(source: any, firecrawlKey: string | undefined): Promi
   }
 
   // Default: crawl
-  const resp = await fetch(endpoint, {
+  const resp = await fetchWithRetry(endpoint, {
     method: "POST",
     headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -656,7 +804,7 @@ async function crawlSource(source: any, firecrawlKey: string | undefined): Promi
 async function parseSingleUrl(url: string, firecrawlKey: string | undefined): Promise<any> {
   if (!firecrawlKey) return { title: "Unknown", company: "Unknown", source_job_url: url };
 
-  const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+  const resp = await fetchWithRetry("https://api.firecrawl.dev/v1/scrape", {
     method: "POST",
     headers: { Authorization: `Bearer ${firecrawlKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({

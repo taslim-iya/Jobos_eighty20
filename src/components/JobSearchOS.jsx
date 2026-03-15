@@ -5553,7 +5553,7 @@ function RecommendedJobs({ jobs, setJobs, profile }) {
 
 
 const PAGE_TITLES = {
-  dashboard:"Dashboard", recommended:"Recommended Jobs", discover:"Job Discovery", explore:"Explore Jobs",
+  dashboard:"Dashboard", recommended:"Recommended Jobs", jobs:"Job Board",
   websites:"Website Manager", pipeline:"CRM", playbooks:"Playbooks",
   cv:"CV + Cover Letters", interview:"Interview Prep",
   extension:"Auto Apply", profile:"My Profile", admin:"Admin Console",

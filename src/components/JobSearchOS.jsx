@@ -5057,7 +5057,10 @@ function Admin() {
       </div>
       {scrapeRunning && (
         <div className="mb16">
-          <div className="ai-pulse mb8"><div className="dot-spin"/>Crawling all sources, extracting jobs, and running match scoring...</div>
+          <div className="flex" style={{justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <div className="ai-pulse" style={{margin:0}}><div className="dot-spin"/>Crawling all sources, extracting jobs, and running match scoring...</div>
+            <button className="btn btn-ghost btn-xs" onClick={cancelCrawl} style={{color:"var(--red)",whiteSpace:"nowrap"}}>✕ Cancel</button>
+          </div>
           <div style={{background:"var(--bg3)",borderRadius:8,height:8,overflow:"hidden"}}>
             <div style={{height:"100%",borderRadius:8,background:"linear-gradient(90deg,var(--gold),var(--gold-light,#f5c842))",width:`${Math.min(crawlProgress,100)}%`,transition:"width 0.4s ease"}}/>
           </div>

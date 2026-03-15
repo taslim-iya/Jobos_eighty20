@@ -1410,7 +1410,7 @@ function Dashboard({ jobs, profile }) {
             { day:"THU", task:"Practice interview questions", done:false },
             { day:"FRI", task: jobs.filter(j=>j.stage==="interviewing")[0] ? `Prep for ${jobs.filter(j=>j.stage==="interviewing")[0].firm} interview` : "Review & plan next week", done:false },
           ] : [
-            { day:"MON", task:"Start by adding roles in Job Discovery", done:false },
+            { day:"MON", task:"Start by browsing roles on the Job Board", done:false },
             { day:"TUE", task:"Upload your CV in CV Studio", done:false },
             { day:"WED", task:"Add target websites to Website Manager", done:false },
             { day:"THU", task:"Explore Playbooks for your track", done:false },

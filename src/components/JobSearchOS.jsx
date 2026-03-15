@@ -4931,8 +4931,24 @@ function Admin() {
   }, [adminTab, isAdmin]);
 
   const [crawlProgress, setCrawlProgress] = useState(0);
+  const crawlAbortRef = useRef(null);
+
+  const cancelCrawl = () => {
+    if (crawlAbortRef.current) {
+      crawlAbortRef.current.abort();
+      crawlAbortRef.current = null;
+    }
+    setScrapeRunning(false);
+    setCrawlProgress(0);
+    setScrapeResult({ error: "Crawl cancelled by user" });
+  };
 
   const runCrawlAndMatch = async (sourceId = null) => {
+    // Abort any existing crawl
+    if (crawlAbortRef.current) crawlAbortRef.current.abort();
+    const controller = new AbortController();
+    crawlAbortRef.current = controller;
+
     setScrapeRunning(true);
     setScrapeResult(null);
     setCrawlProgress(0);
@@ -4951,15 +4967,21 @@ function Admin() {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY },
         body: JSON.stringify(sourceId ? { source_id: sourceId } : {}),
+        signal: controller.signal,
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload?.error || `Failed (${response.status})`);
       setScrapeResult(payload);
       fetchCrawlRuns().then(({ data }) => setCrawlRuns(data || []));
     } catch (err) {
-      setScrapeResult({ error: err.message });
+      if (err.name === "AbortError") {
+        setScrapeResult({ error: "Crawl cancelled" });
+      } else {
+        setScrapeResult({ error: err.message });
+      }
     }
     clearInterval(interval);
+    crawlAbortRef.current = null;
     setCrawlProgress(100);
     setTimeout(() => { setScrapeRunning(false); setCrawlProgress(0); }, 600);
   };

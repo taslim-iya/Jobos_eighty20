@@ -1890,7 +1890,7 @@ function WebsiteManager() {
   const scanSite = async (site) => {
     setScanning(site.id);
     setSites(prev => prev.map(s => s.id === site.id ? { ...s, status: "scanning" } : s));
-    const trackKw = { ib: "investment banking analyst M&A ECM DCM summer analyst", consulting: "management consulting business analyst strategy", product: "product manager APM growth PM", postgrad: "graduate program rotational scheme trainee MBA" };
+    const trackKw = {ib:"investment banking analyst M&A ECM DCM summer analyst",pe:"private equity analyst buyout LBO",vc:"venture capital analyst startup",consulting:"management consulting business analyst strategy",trading:"sales trading trader structuring",am:"asset management portfolio fund manager",tech:"software engineer product manager startup"};
     try {
       const extraKeywords = (site.keywords || []).join(" ");
       const extraTitles = (site.job_titles || []).join(" ");

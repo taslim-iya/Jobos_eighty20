@@ -4290,9 +4290,12 @@ function MyProfile() {
             <div className="fg"><label className="label">Target Track</label>
               <select className="input" value={p.target_track||"ib"} onChange={e=>update("target_track",e.target.value)}>
                 <option value="ib">Investment Banking</option>
-                <option value="consulting">Consulting</option>
-                <option value="product">Product & Tech</option>
-                <option value="postgrad">Post-Graduate Path</option>
+                <option value="pe">Private Equity</option>
+                <option value="vc">Venture Capital</option>
+                <option value="consulting">Management Consulting</option>
+                <option value="trading">Sales & Trading</option>
+                <option value="am">Investment Management</option>
+                <option value="tech">Tech & Startups</option>
               </select>
             </div>
           </div>

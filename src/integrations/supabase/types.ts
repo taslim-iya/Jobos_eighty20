@@ -267,10 +267,12 @@ export type Database = {
           firm: string
           hash: string | null
           id: string
+          job_type: string | null
           location: string | null
           match_score: number | null
           posted_at: string | null
           remote_flag: boolean | null
+          salary: string | null
           source: string | null
           source_id: string | null
           source_job_url: string | null
@@ -293,10 +295,12 @@ export type Database = {
           firm: string
           hash?: string | null
           id?: string
+          job_type?: string | null
           location?: string | null
           match_score?: number | null
           posted_at?: string | null
           remote_flag?: boolean | null
+          salary?: string | null
           source?: string | null
           source_id?: string | null
           source_job_url?: string | null
@@ -319,10 +323,12 @@ export type Database = {
           firm?: string
           hash?: string | null
           id?: string
+          job_type?: string | null
           location?: string | null
           match_score?: number | null
           posted_at?: string | null
           remote_flag?: boolean | null
+          salary?: string | null
           source?: string | null
           source_id?: string | null
           source_job_url?: string | null

@@ -4930,9 +4930,18 @@ function Admin() {
     if (adminTab === "jobs" && isAdmin && allJobs.length === 0) loadAllJobs();
   }, [adminTab, isAdmin]);
 
+  const [crawlProgress, setCrawlProgress] = useState(0);
+
   const runCrawlAndMatch = async (sourceId = null) => {
     setScrapeRunning(true);
     setScrapeResult(null);
+    setCrawlProgress(0);
+    const interval = setInterval(() => {
+      setCrawlProgress(prev => {
+        if (prev >= 90) { clearInterval(interval); return 90; }
+        return prev + Math.random() * 8 + 2;
+      });
+    }, 800);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token;
@@ -4950,7 +4959,9 @@ function Admin() {
     } catch (err) {
       setScrapeResult({ error: err.message });
     }
-    setScrapeRunning(false);
+    clearInterval(interval);
+    setCrawlProgress(100);
+    setTimeout(() => { setScrapeRunning(false); setCrawlProgress(0); }, 600);
   };
 
   const addSource = async () => {

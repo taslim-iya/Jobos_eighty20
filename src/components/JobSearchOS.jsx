@@ -1754,7 +1754,7 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
           {aiSearching && (
             <div className="ai-pulse">
               <div className="dot-spin"/>
-              <div>Searching the web for <strong>{aiSearchQuery}</strong> — matching to your {trackFilter === "ib" ? "IB" : trackFilter} {levelFilter} profile...</div>
+              <div>Searching the web for <strong>{aiSearchQuery}</strong> — matching to your {({ib:"IB",pe:"PE",vc:"VC",consulting:"Consulting",trading:"S&T",am:"IM",tech:"Tech"})[trackFilter]||trackFilter} {levelFilter} profile...</div>
             </div>
           )}
 

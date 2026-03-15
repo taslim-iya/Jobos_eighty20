@@ -641,13 +641,12 @@ function mapSeniority(text: string): string | null {
 function inferTrack(text: string): string | null {
   const t = (text || "").toLowerCase();
   if (/investment.bank|m&a|ecm|dcm|leveraged.finance|capital.markets/i.test(t)) return "ib";
+  if (/private.equity|pe\s|buyout|lbo/i.test(t)) return "pe";
+  if (/venture.capital|vc\s|seed.stage|series\s*[a-c]/i.test(t)) return "vc";
   if (/consult|strategy|advisory|mckinsey|bain|bcg/i.test(t)) return "consulting";
-  if (/asset.manag|portfolio|fund|wealth/i.test(t)) return "am";
-  if (/product.manag|apm|growth.product/i.test(t)) return "product";
-  if (/private.equity|pe\s|buyout/i.test(t)) return "pe";
-  if (/venture.capital|vc\s/i.test(t)) return "vc";
-  if (/quant|trading|trader|market.mak/i.test(t)) return "trading";
-  if (/audit|accounting|tax/i.test(t)) return "accounting";
+  if (/sales.*trad|trading|trader|structur|market.mak|derivatives/i.test(t)) return "trading";
+  if (/asset.manag|portfolio|fund.manag|wealth|investment.manag/i.test(t)) return "am";
+  if (/software.eng|product.manag|startup|developer|full.stack|front.end|back.end|devops|data.scien/i.test(t)) return "tech";
   return null;
 }
 

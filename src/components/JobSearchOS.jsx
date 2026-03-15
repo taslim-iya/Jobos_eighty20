@@ -1357,7 +1357,7 @@ function Dashboard({ jobs, profile }) {
   return (
     <div className="page">
       <div className="hero">
-        <div className="hero-eye">{profile.track === "ib" ? "IB" : profile.track === "consulting" ? "Consulting" : profile.track === "postgrad" ? "Post-Grad" : "Product"} Track · {profile.level === "undergrad" ? "Undergraduate" : "Experienced Hire"}</div>
+        <div className="hero-eye">{({ib:"IB",pe:"PE",vc:"VC",consulting:"Consulting",trading:"Sales & Trading",am:"Investment Mgmt",tech:"Tech & Startups"})[profile.track]||profile.track} Track · {profile.level === "undergrad" ? "Undergraduate" : "Experienced Hire"}</div>
         <div className="hero-h">Welcome back, {profile.name.split(" ")[0]}.<br/>{jobs.filter(j=>j.stage!=="saved"&&j.stage!=="offer").length > 0 ? `You have ${jobs.filter(j=>j.stage!=="saved"&&j.stage!=="offer").length} active applications.` : "Start by discovering roles."}</div>
         <div className="hero-p">{jobs.filter(j=>j.stage==="interviewing").length > 0 ? `${jobs.filter(j=>j.stage==="interviewing").length} interview(s) in progress. Focus on preparation.` : jobs.length > 0 ? "Keep building your pipeline and preparing for interviews." : "Use Job Discovery to find and save roles to your pipeline."}</div>
         <div className="hero-actions">
@@ -1519,12 +1519,16 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
   const runWebsiteScan = async () => {
     setScanning(true);
     setScanLog([]);
-    const trackName = trackFilter === "ib" ? "investment banking" : trackFilter === "consulting" ? "management consulting" : trackFilter === "postgrad" ? "graduate program" : "product management";
+    const trackNames = {ib:"investment banking",pe:"private equity",vc:"venture capital",consulting:"management consulting",trading:"sales and trading",am:"investment management",tech:"tech startups"};
+    const trackName = trackNames[trackFilter] || "finance";
     const trackKw = {
       ib: "investment banking analyst associate M&A ECM DCM summer analyst leveraged finance",
+      pe: "private equity analyst associate buyout LBO portfolio company",
+      vc: "venture capital analyst associate startup funding seed series",
       consulting: "management consulting business analyst strategy consultant associate",
-      product: "product manager APM associate product manager growth PM",
-      postgrad: "graduate program rotational program graduate scheme trainee MBA",
+      trading: "sales trading trader structuring market making fixed income equities",
+      am: "asset management portfolio manager investment analyst fund manager wealth",
+      tech: "software engineer product manager startup technology developer growth",
     };
 
     try {
@@ -1555,7 +1559,7 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
             track: trackFilter,
             level: levelFilter,
             saved: false,
-            tags: j.tags?.length ? j.tags : [trackFilter === "ib" ? "IB" : trackFilter === "consulting" ? "Consulting" : trackFilter === "postgrad" ? "Post-Grad" : "Product"],
+            tags: j.tags?.length ? j.tags : [({ib:"IB",pe:"PE",vc:"VC",consulting:"Consulting",trading:"S&T",am:"IM",tech:"Tech"})[trackFilter]||trackFilter],
           }));
 
           setDiscJobs(prev => {
@@ -1574,7 +1578,7 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
           track: trackFilter,
           level: levelFilter,
           saved: false,
-          tags: j.tags?.length ? j.tags : [trackFilter === "ib" ? "IB" : trackFilter === "consulting" ? "Consulting" : trackFilter === "postgrad" ? "Post-Grad" : "Product"],
+          tags: j.tags?.length ? j.tags : [({ib:"IB",pe:"PE",vc:"VC",consulting:"Consulting",trading:"S&T",am:"IM",tech:"Tech"})[trackFilter]||trackFilter],
         }));
 
         setDiscJobs(prev => {
@@ -1610,7 +1614,7 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
           level: levelFilter,
           saved: false,
           source: j.source || "AI Search",
-          tags: j.tags?.length ? j.tags : [trackFilter === "ib" ? "IB" : trackFilter === "consulting" ? "Consulting" : trackFilter === "postgrad" ? "Post-Grad" : "Product"],
+          tags: j.tags?.length ? j.tags : [({ib:"IB",pe:"PE",vc:"VC",consulting:"Consulting",trading:"S&T",am:"IM",tech:"Tech"})[trackFilter]||trackFilter],
         }));
 
       setAiResults(withId);
@@ -1640,11 +1644,14 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
       <div className="card-flat mb16">
         <div className="flex items-c g12 flex-wrap">
           <div style={{fontSize:12,fontWeight:500,color:"var(--ink3)",marginRight:4}}>Showing roles for:</div>
-          <select className="input" style={{width:160}} value={trackFilter} onChange={e=>setTrackFilter(e.target.value)}>
+          <select className="input" style={{width:180}} value={trackFilter} onChange={e=>setTrackFilter(e.target.value)}>
             <option value="ib">Investment Banking</option>
-            <option value="consulting">Consulting</option>
-            <option value="product">Product</option>
-            <option value="postgrad">Post-Graduate Path</option>
+            <option value="pe">Private Equity</option>
+            <option value="vc">Venture Capital</option>
+            <option value="consulting">Management Consulting</option>
+            <option value="trading">Sales & Trading</option>
+            <option value="am">Investment Management</option>
+            <option value="tech">Tech & Startups</option>
             <option value="">All Tracks</option>
           </select>
           <select className="input" style={{width:160}} value={levelFilter} onChange={e=>setLevelFilter(e.target.value)}>
@@ -1690,7 +1697,7 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
       {tab === "recommended" && (
         <div>
           <div className="alert a-gold mb16">
-            ✨ <span>Recommendations based on your <strong>{trackFilter === "ib" ? "IB" : trackFilter === "consulting" ? "Consulting" : trackFilter === "postgrad" ? "Post-Grad" : "Product"} {levelFilter === "undergrad" ? "Undergrad" : "Experienced"}</strong> profile, CV, and location preference (<strong>{locationFilter || "All"}</strong>).</span>
+            ✨ <span>Recommendations based on your <strong>{({ib:"IB",pe:"PE",vc:"VC",consulting:"Consulting",trading:"Sales & Trading",am:"Investment Mgmt",tech:"Tech & Startups"})[trackFilter]||trackFilter} {levelFilter === "undergrad" ? "Undergrad" : "Experienced"}</strong> profile, CV, and location preference (<strong>{locationFilter || "All"}</strong>).</span>
           </div>
           <div className="grid g-auto">
             {filtered.map(job => (
@@ -1747,7 +1754,7 @@ function JobDiscovery({ jobs, setJobs, profile, setProfile }) {
           {aiSearching && (
             <div className="ai-pulse">
               <div className="dot-spin"/>
-              <div>Searching the web for <strong>{aiSearchQuery}</strong> — matching to your {trackFilter === "ib" ? "IB" : trackFilter} {levelFilter} profile...</div>
+              <div>Searching the web for <strong>{aiSearchQuery}</strong> — matching to your {({ib:"IB",pe:"PE",vc:"VC",consulting:"Consulting",trading:"S&T",am:"IM",tech:"Tech"})[trackFilter]||trackFilter} {levelFilter} profile...</div>
             </div>
           )}
 
@@ -1883,7 +1890,7 @@ function WebsiteManager() {
   const scanSite = async (site) => {
     setScanning(site.id);
     setSites(prev => prev.map(s => s.id === site.id ? { ...s, status: "scanning" } : s));
-    const trackKw = { ib: "investment banking analyst M&A ECM DCM summer analyst", consulting: "management consulting business analyst strategy", product: "product manager APM growth PM", postgrad: "graduate program rotational scheme trainee MBA" };
+    const trackKw = {ib:"investment banking analyst M&A ECM DCM summer analyst",pe:"private equity analyst buyout LBO",vc:"venture capital analyst startup",consulting:"management consulting business analyst strategy",trading:"sales trading trader structuring",am:"asset management portfolio fund manager",tech:"software engineer product manager startup"};
     try {
       const extraKeywords = (site.keywords || []).join(" ");
       const extraTitles = (site.job_titles || []).join(" ");
@@ -3120,7 +3127,7 @@ function Pipeline({ jobs: allJobs, setJobs }) {
       }
 
       setJobUploadLog("🤖 AI is parsing jobs from your file...");
-      const prompt = `Parse the following document content into a list of job opportunities. Extract: title (job title), firm (company name), track (one of: ib, consulting, product), level (undergrad or experienced), location, deadline, description, source (where the job was found), and url (application link if available).
+      const prompt = `Parse the following document content into a list of job opportunities. Extract: title (job title), firm (company name), track (one of: ib, pe, vc, consulting, trading, am, tech), level (undergrad or experienced), location, deadline, description, source (where the job was found), and url (application link if available).
 
 Return ONLY a valid JSON array like:
 [{"title":"Summer Analyst 2026","firm":"Goldman Sachs","track":"ib","level":"undergrad","location":"London","deadline":"Rolling","description":"IBD summer analyst programme","source":"Company Website","url":"https://..."}]
@@ -3157,7 +3164,7 @@ ${textContent.slice(0, 8000)}`;
           source: j.source || "File Upload",
           url: j.url || "",
           match: 80,
-          tags: j.track === "ib" ? ["IB"] : j.track === "consulting" ? ["Consulting"] : ["Product"],
+          tags: [({ib:"IB",pe:"PE",vc:"VC",consulting:"Consulting",trading:"S&T",am:"IM",tech:"Tech"})[j.track]||j.track||"IB"],
         });
         if (!error) inserted++;
       }
@@ -3543,8 +3550,12 @@ function Interview() {
 
 Include a mix of categories:
 ${selectedTrack === "ib" ? "- Technical (DCF, LBO, M&A, Accounting)\n- Behavioral (leadership, teamwork, fit)\n- Market/Deals (current events, deal analysis)" :
+  selectedTrack === "pe" ? "- Technical (LBO modeling, due diligence, portfolio ops)\n- Behavioral (leadership, deal experience)\n- Market (current PE landscape, deals)" :
+  selectedTrack === "vc" ? "- Technical (startup valuation, cap tables, term sheets)\n- Market (sectors, trends, portfolio analysis)\n- Behavioral (sourcing, founder evaluation)" :
   selectedTrack === "consulting" ? "- Case Study (profitability, market entry, M&A)\n- Market Sizing (estimation questions)\n- Behavioral (leadership, impact, fit)" :
-  "- Product Design (new product, improvement)\n- Metrics/Analytics (data-driven decisions)\n- Leadership (cross-functional, strategy)"}
+  selectedTrack === "trading" ? "- Technical (pricing, risk, derivatives, Greeks)\n- Market (macro, rates, FX, current events)\n- Behavioral (pressure, quick decisions)" :
+  selectedTrack === "am" ? "- Technical (portfolio construction, equity research, valuation)\n- Market (macro themes, sector analysis)\n- Behavioral (investment philosophy, teamwork)" :
+  "- Product Design (new product, improvement)\n- Technical (system design, coding)\n- Leadership (cross-functional, strategy)"}
 
 Return ONLY a JSON array: [{"q":"...","cat":"...","diff":"Core or Advanced"}]`;
     try {
@@ -4283,9 +4294,12 @@ function MyProfile() {
             <div className="fg"><label className="label">Target Track</label>
               <select className="input" value={p.target_track||"ib"} onChange={e=>update("target_track",e.target.value)}>
                 <option value="ib">Investment Banking</option>
-                <option value="consulting">Consulting</option>
-                <option value="product">Product & Tech</option>
-                <option value="postgrad">Post-Graduate Path</option>
+                <option value="pe">Private Equity</option>
+                <option value="vc">Venture Capital</option>
+                <option value="consulting">Management Consulting</option>
+                <option value="trading">Sales & Trading</option>
+                <option value="am">Investment Management</option>
+                <option value="tech">Tech & Startups</option>
               </select>
             </div>
           </div>
@@ -5819,7 +5833,7 @@ export default function JobSearchOS() {
               <div className="avatar">{profile.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}</div>
               <div>
                 <div className="user-name">{profile.name}</div>
-                <div className="user-meta">{profile.track === "ib" ? "IB" : profile.track === "consulting" ? "Consulting" : profile.track === "postgrad" ? "Post-Grad" : "Product"} · {profile.level === "undergrad" ? "Undergrad" : "Experienced"}</div>
+                <div className="user-meta">{({ib:"IB",pe:"PE",vc:"VC",consulting:"Consulting",trading:"S&T",am:"IM",tech:"Tech"})[profile.track]||profile.track} · {profile.level === "undergrad" ? "Undergrad" : "Experienced"}</div>
               </div>
             </div>
           </div>

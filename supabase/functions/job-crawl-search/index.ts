@@ -61,9 +61,8 @@ function isExpired(item: { title?: string; description?: string; deadline?: stri
 }
 
 function inferTrackTags(track: string): string[] {
-  if (track === "consulting") return ["Consulting"];
-  if (track === "product") return ["Product"];
-  return ["IB"];
+  const map: Record<string, string[]> = {ib:["IB"],pe:["PE"],vc:["VC"],consulting:["Consulting"],trading:["S&T"],am:["IM"],tech:["Tech"]};
+  return map[track] || ["IB"];
 }
 
 function sourceFromUrl(url: string): string {

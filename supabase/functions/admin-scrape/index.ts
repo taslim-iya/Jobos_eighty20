@@ -12,15 +12,35 @@ const TRACK_QUERIES: Record<string, string[]> = {
     "M&A analyst summer analyst",
     "ECM DCM analyst leveraged finance",
   ],
+  pe: [
+    "private equity analyst",
+    "private equity associate buyout",
+    "LBO analyst portfolio company",
+  ],
+  vc: [
+    "venture capital analyst",
+    "venture capital associate",
+    "startup investment analyst seed series",
+  ],
   consulting: [
     "management consulting analyst",
     "strategy consulting associate",
     "business analyst consulting",
   ],
-  product: [
-    "associate product manager",
-    "product manager",
-    "growth product manager",
+  trading: [
+    "sales and trading analyst",
+    "trader structuring",
+    "fixed income equities trading",
+  ],
+  am: [
+    "asset management analyst",
+    "portfolio manager",
+    "investment management fund analyst",
+  ],
+  tech: [
+    "software engineer",
+    "product manager startup",
+    "growth engineer technology",
   ],
 };
 
@@ -248,7 +268,7 @@ Deno.serve(async (req) => {
           stage: "saved",
           deadline: j.deadline,
           match_score: 80,
-          tags: j.track === "ib" ? ["IB"] : j.track === "consulting" ? ["Consulting"] : ["Product"],
+          tags: ({ib:["IB"],pe:["PE"],vc:["VC"],consulting:["Consulting"],trading:["S&T"],am:["IM"],tech:["Tech"]})[j.track] || [j.track],
           track: j.track,
           experience_level: j.level,
           location: j.location,

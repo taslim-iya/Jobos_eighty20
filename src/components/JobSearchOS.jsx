@@ -5829,7 +5829,7 @@ export default function JobSearchOS() {
               <div className="avatar">{profile.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}</div>
               <div>
                 <div className="user-name">{profile.name}</div>
-                <div className="user-meta">{profile.track === "ib" ? "IB" : profile.track === "consulting" ? "Consulting" : profile.track === "postgrad" ? "Post-Grad" : "Product"} · {profile.level === "undergrad" ? "Undergrad" : "Experienced"}</div>
+                <div className="user-meta">{({ib:"IB",pe:"PE",vc:"VC",consulting:"Consulting",trading:"S&T",am:"IM",tech:"Tech"})[profile.track]||profile.track} · {profile.level === "undergrad" ? "Undergrad" : "Experienced"}</div>
               </div>
             </div>
           </div>

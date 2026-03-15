@@ -1327,8 +1327,7 @@ const NAV = [
     { id:"recommended", icon:"🎯", label:"Recommended", badge:"NEW", badgeGreen:true },
   ]},
   { section: "Discover", items: [
-    { id:"discover",  icon:"🔍", label:"Job Discovery" },
-    { id:"explore",   icon:"🌍", label:"Explore Jobs" },
+    { id:"jobs",       icon:"📋", label:"Job Board" },
     { id:"pipeline",  icon:"🗃", label:"CRM" },
   ]},
   { section: "Prepare", items: [

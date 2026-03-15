@@ -4930,9 +4930,18 @@ function Admin() {
     if (adminTab === "jobs" && isAdmin && allJobs.length === 0) loadAllJobs();
   }, [adminTab, isAdmin]);
 
+  const [crawlProgress, setCrawlProgress] = useState(0);
+
   const runCrawlAndMatch = async (sourceId = null) => {
     setScrapeRunning(true);
     setScrapeResult(null);
+    setCrawlProgress(0);
+    const interval = setInterval(() => {
+      setCrawlProgress(prev => {
+        if (prev >= 90) { clearInterval(interval); return 90; }
+        return prev + Math.random() * 8 + 2;
+      });
+    }, 800);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token;
@@ -4950,7 +4959,9 @@ function Admin() {
     } catch (err) {
       setScrapeResult({ error: err.message });
     }
-    setScrapeRunning(false);
+    clearInterval(interval);
+    setCrawlProgress(100);
+    setTimeout(() => { setScrapeRunning(false); setCrawlProgress(0); }, 600);
   };
 
   const addSource = async () => {
@@ -5022,7 +5033,15 @@ function Admin() {
           <span className="tag t-red">Owner Only</span>
         
       </div>
-      {scrapeRunning && <div className="ai-pulse mb16"><div className="dot-spin"/>Crawling all sources, extracting jobs, and running match scoring...</div>}
+      {scrapeRunning && (
+        <div className="mb16">
+          <div className="ai-pulse mb8"><div className="dot-spin"/>Crawling all sources, extracting jobs, and running match scoring...</div>
+          <div style={{background:"var(--bg3)",borderRadius:8,height:8,overflow:"hidden"}}>
+            <div style={{height:"100%",borderRadius:8,background:"linear-gradient(90deg,var(--gold),var(--gold-light,#f5c842))",width:`${Math.min(crawlProgress,100)}%`,transition:"width 0.4s ease"}}/>
+          </div>
+          <div className="fs12 t-ink3 mt4" style={{textAlign:"right"}}>{Math.round(Math.min(crawlProgress,100))}%</div>
+        </div>
+      )}
       {scrapeResult && !scrapeResult.error && adminTab !== "crawl" && (
         <div className="alert a-green mb16">✅ Pipeline complete! Crawled <strong>{scrapeResult.sources_crawled}</strong> sources, inserted <strong>{scrapeResult.jobs_inserted}</strong> jobs, created <strong>{scrapeResult.matches_created}</strong> profile matches.</div>
       )}

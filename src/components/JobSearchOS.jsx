@@ -1327,6 +1327,7 @@ const NAV = [
     { id:"recommended", icon:"🎯", label:"Recommended", badge:"NEW", badgeGreen:true },
   ]},
   { section: "Discover", items: [
+    { id:"scout",      icon:"🔍", label:"Job Scout", badge:"NEW", badgeGreen:true },
     { id:"jobs",       icon:"📋", label:"Job Board" },
     { id:"pipeline",  icon:"🗃", label:"CRM" },
   ]},
@@ -5557,7 +5558,181 @@ const PAGE_TITLES = {
   websites:"Website Manager", pipeline:"CRM", playbooks:"Playbooks",
   cv:"CV + Cover Letters", interview:"Interview Prep",
   extension:"Auto Apply", profile:"My Profile", admin:"Admin Console",
+  scout:"Job Scout",
 };
+
+/* ════════════════════════════════════════════════════════════════════════════
+   PAGE: JOB SCOUT (MBA Scout Integration)
+══════════════════════════════════════════════════════════════════════════════ */
+const SCOUT_SUPABASE_URL = "https://ojtredjreiajjrgcwcuy.supabase.co";
+const SCOUT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9qdHJlZGpyZWlhampyZ2N3Y3V5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2MzExMTcsImV4cCI6MjA4ODIwNzExN30.au5FIjdjtuTQkJJl9f9P5N_rx3RhLjFVSGJql3UyRIk";
+const SCOUT_MODES = [
+  { id: "vc", label: "VC" }, { id: "pe", label: "PE" }, { id: "ib", label: "IB" },
+  { id: "mc", label: "MC" }, { id: "st", label: "S&T" }, { id: "im", label: "IM" },
+  { id: "tech", label: "Tech" }, { id: "startups", label: "Startups" },
+];
+
+function JobScout({ jobs: existingJobs, setJobs: setExistingJobs, profile }) {
+  const [mode, setMode] = useState(profile.track === "consulting" ? "mc" : profile.track === "trading" ? "st" : profile.track === "am" ? "im" : profile.track || "ib");
+  const [scoutJobs, setScoutJobs] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [imported, setImported] = useState(new Set());
+  const [lastFetched, setLastFetched] = useState(null);
+
+  const fetchScoutJobs = async () => {
+    setLoading(true);
+    try {
+      const resp = await fetch(`${SCOUT_SUPABASE_URL}/rest/v1/scraped_jobs?mode=eq.${mode}&order=scraped_at.desc&limit=100`, {
+        headers: { apikey: SCOUT_SUPABASE_KEY, Authorization: `Bearer ${SCOUT_SUPABASE_KEY}` },
+      });
+      const data = await resp.json();
+      setScoutJobs(data || []);
+      setLastFetched(new Date().toLocaleTimeString());
+    } catch (err) {
+      console.error("Scout fetch failed:", err);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchScoutJobs(); }, [mode]);
+
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const selectAll = () => {
+    if (selectedIds.size === scoutJobs.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(scoutJobs.map(j => j.id)));
+    }
+  };
+
+  const importSelected = async () => {
+    const toImport = scoutJobs.filter(j => selectedIds.has(j.id) && !imported.has(j.id));
+    for (const sj of toImport) {
+      const newJob = {
+        title: sj.title,
+        firm: sj.company,
+        location: sj.location || "",
+        url: sj.url || "",
+        apply_url: sj.url || "",
+        source: `scout-${mode}`,
+        source_job_url: sj.source_url || "",
+        description: sj.description || "",
+        salary: sj.salary || "",
+        job_type: sj.type || "full-time",
+        stage: "saved",
+        posted_at: sj.posted_date || null,
+        tags: [mode, "scout-import"],
+      };
+      await upsertJob(newJob);
+    }
+    setImported(prev => new Set([...prev, ...toImport.map(j => j.id)]));
+    // Refresh main jobs list
+    const refreshed = await fetchJobs();
+    setExistingJobs(refreshed);
+    setSelectedIds(new Set());
+  };
+
+  const existingUrls = new Set(existingJobs.map(j => j.url).filter(Boolean));
+
+  return (
+    <div className="page">
+      <div className="section-header">
+        <div>
+          <div className="section-title">Job Scout</div>
+          <div style={{color:"var(--ink3)",fontSize:13,marginTop:4}}>
+            Aggregated jobs from LinkedIn, Indeed, Glassdoor & more • {scoutJobs.length} jobs found
+            {lastFetched && <span> • Last fetched: {lastFetched}</span>}
+          </div>
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          {selectedIds.size > 0 && (
+            <button className="btn btn-gold" onClick={importSelected}>
+              Import {selectedIds.size} to Pipeline
+            </button>
+          )}
+          <button className="btn btn-outline" onClick={fetchScoutJobs} disabled={loading}>
+            {loading ? "⏳ Fetching..." : "🔄 Refresh"}
+          </button>
+        </div>
+      </div>
+
+      {/* Mode tabs */}
+      <div className="tabs" style={{marginBottom:20}}>
+        {SCOUT_MODES.map(m => (
+          <div key={m.id} className={`tab ${mode === m.id ? "active" : ""}`} onClick={() => setMode(m.id)}>
+            {m.label}
+          </div>
+        ))}
+      </div>
+
+      {loading ? (
+        <div style={{textAlign:"center",padding:60,color:"var(--ink3)"}}>
+          <div style={{fontSize:24,marginBottom:8}}>⏳</div>
+          Fetching {mode.toUpperCase()} jobs from Scout...
+        </div>
+      ) : scoutJobs.length === 0 ? (
+        <div style={{textAlign:"center",padding:60,color:"var(--ink3)"}}>
+          <div style={{fontSize:24,marginBottom:8}}>📭</div>
+          No {mode.toUpperCase()} jobs found. The scraper runs daily at 4am UTC.
+        </div>
+      ) : (
+        <div className="table" style={{fontSize:13}}>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead>
+              <tr style={{borderBottom:"1px solid var(--border)"}}>
+                <th style={{padding:"10px 12px",textAlign:"left",width:40}}>
+                  <input type="checkbox" checked={selectedIds.size === scoutJobs.length} onChange={selectAll}/>
+                </th>
+                <th style={{padding:"10px 12px",textAlign:"left"}}>Title</th>
+                <th style={{padding:"10px 12px",textAlign:"left"}}>Company</th>
+                <th style={{padding:"10px 12px",textAlign:"left"}}>Location</th>
+                <th style={{padding:"10px 12px",textAlign:"left"}}>Source</th>
+                <th style={{padding:"10px 12px",textAlign:"left"}}>Posted</th>
+                <th style={{padding:"10px 12px",textAlign:"left",width:80}}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {scoutJobs.map(j => {
+                const alreadyIn = existingUrls.has(j.url) || imported.has(j.id);
+                return (
+                  <tr key={j.id} style={{borderBottom:"1px solid var(--border)",opacity:alreadyIn?0.5:1}}>
+                    <td style={{padding:"10px 12px"}}>
+                      <input type="checkbox" checked={selectedIds.has(j.id)} onChange={() => toggleSelect(j.id)} disabled={alreadyIn}/>
+                    </td>
+                    <td style={{padding:"10px 12px"}}>
+                      <a href={j.url} target="_blank" rel="noreferrer" style={{color:"var(--gold)",textDecoration:"none",fontWeight:500}}>
+                        {j.title}
+                      </a>
+                    </td>
+                    <td style={{padding:"10px 12px",color:"var(--ink2)"}}>{j.company}</td>
+                    <td style={{padding:"10px 12px",color:"var(--ink3)"}}>{j.location}</td>
+                    <td style={{padding:"10px 12px",color:"var(--ink3)"}}>{j.source}</td>
+                    <td style={{padding:"10px 12px",color:"var(--ink3)"}}>{j.posted_date || "—"}</td>
+                    <td style={{padding:"10px 12px"}}>
+                      {alreadyIn ? (
+                        <span className="tag t-green" style={{fontSize:10}}>In Pipeline</span>
+                      ) : (
+                        <span className="tag" style={{fontSize:10}}>New</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function JobSearchOS() {
   const { user, profile: authProfile, signOut } = useAuth();
@@ -5619,6 +5794,7 @@ export default function JobSearchOS() {
     switch (page) {
       case "dashboard":    return <Dashboard jobs={jobs} profile={profile}/>;
       case "recommended":  return <RecommendedJobs jobs={jobs} setJobs={setJobsWithDb} profile={profile}/>;
+      case "scout":        return <JobScout jobs={jobs} setJobs={setJobs} profile={profile}/>;
       case "jobs":         return <JobBoard jobs={jobs} setJobs={setJobsWithDb} profile={profile}/>;
       case "websites":     return <WebsiteManager/>;
       case "pipeline":     return <Pipeline jobs={jobs} setJobs={setJobsWithDb}/>;

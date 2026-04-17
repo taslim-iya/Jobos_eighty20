@@ -1726,35 +1726,24 @@ ${cvText.slice(0,5000)}`;
               <div><div className="fs11 t-ink3 mb4">Target Firms (optional)</div><input className="input" value={form.targets} onChange={e=>setForm(f=>({...f,targets:e.target.value}))} placeholder="e.g. Goldman, McKinsey, Blackstone"/></div>
               <div style={{gridColumn:"1/-1"}}><div className="fs11 t-ink3 mb4">Key Strengths (optional)</div><input className="input" value={form.strengths} onChange={e=>setForm(f=>({...f,strengths:e.target.value}))} placeholder="e.g. Financial modeling, public speaking, Python"/></div>
             </div>
-            <button className="btn btn-primary mt16" onClick={()=>{saveProfile();setStep(2);}} style={{width:"100%"}}>Continue →</button>
-          </div>
-        </>
-      )}
-
-      {/* Step 2: Upload CV */}
-      {step === 2 && (
-        <>
-          <div style={{textAlign:"center",marginBottom:24}}>
-            <div style={{fontSize:40,marginBottom:12}}>📄</div>
-            <div className="section-title" style={{fontSize:22}}>Upload Your CV</div>
-            <div className="fs13 t-ink3" style={{maxWidth:440,margin:"8px auto",lineHeight:1.7}}>We'll analyse it against your target track and tell you exactly what to fix.</div>
-          </div>
-          <div className="card" style={{maxWidth:560,margin:"0 auto"}}>
-            <div style={{border:"2px dashed var(--border2)",borderRadius:10,padding:"32px 24px",textAlign:"center",marginBottom:12}}>
-              <input type="file" accept=".txt,.pdf,.doc,.docx" onChange={handleFileUpload} style={{display:"none"}} id="cv-upload"/>
-              <label htmlFor="cv-upload" style={{cursor:"pointer"}}>
-                <div style={{fontSize:32,marginBottom:8}}>📎</div>
-                <div className="fw6 fs13">{uploading ? "Reading file..." : "Click to upload your CV"}</div>
-                <div className="fs11 t-ink3 mt4">TXT, PDF, DOC supported • Or paste below</div>
-              </label>
+            {/* CV Upload Section — inline in step 1 */}
+            <div style={{borderTop:"1px solid var(--border2)",marginTop:20,paddingTop:16}}>
+              <div className="fs14 fw6 mb8">📄 Upload Your CV</div>
+              <div className="fs12 t-ink3 mb12">We'll analyse it against your target track and tell you exactly what to fix.</div>
+              <div style={{border:"2px dashed var(--border2)",borderRadius:10,padding:"24px 16px",textAlign:"center",marginBottom:12}}>
+                <input type="file" accept=".txt,.pdf,.doc,.docx" onChange={handleFileUpload} style={{display:"none"}} id="cv-upload"/>
+                <label htmlFor="cv-upload" style={{cursor:"pointer"}}>
+                  <div style={{fontSize:28,marginBottom:6}}>📎</div>
+                  <div className="fw6 fs12">{uploading ? "Reading file..." : "Click to upload your CV"}</div>
+                  <div className="fs11 t-ink3 mt4">TXT, PDF, DOC supported • Or paste below</div>
+                </label>
+              </div>
+              <textarea className="input" rows={5} value={cvText} onChange={e=>setCvText(e.target.value)} placeholder="Or paste your CV text here..." style={{fontSize:12,lineHeight:1.7}}/>
             </div>
-            <textarea className="input" rows={8} value={cvText} onChange={e=>setCvText(e.target.value)} placeholder="Or paste your CV text here..." style={{fontSize:12,lineHeight:1.7}}/>
-            <div className="flex g8 mt12">
-              <button className="btn btn-outline" onClick={()=>setStep(1)}>← Back</button>
-              <button className="btn btn-primary flex-1" onClick={analyzeCV} disabled={!cvText.trim()||analyzing}>
-                {analyzing ? "⏳ Analysing your CV..." : "Analyse & Continue →"}
+            <div className="flex g8 mt16">
+              <button className="btn btn-primary flex-1" onClick={()=>{saveProfile();if(cvText.trim()){analyzeCV();}else{setStep(3);}}} disabled={analyzing}>
+                {analyzing ? "⏳ Analysing..." : cvText.trim() ? "Analyse CV & Continue →" : "Continue →"}
               </button>
-              {!cvText.trim() && <button className="btn btn-outline" onClick={()=>{saveProfile();setStep(3);}}>Skip for now</button>}
             </div>
           </div>
         </>
@@ -4516,9 +4505,10 @@ IMPORTANT: Do NOT use markdown formatting like **, ##, ###, ***, ---, or any oth
                     <thead>
                       <tr style={{borderBottom:"2px solid var(--border2)"}}>
                         <th style={{textAlign:"left",padding:"8px 10px",fontWeight:600,color:"var(--ink)",whiteSpace:"nowrap"}}>Tier</th>
-                        {Object.keys(industry.pay[0]).filter(k=>k!=="tier").map(k=>(
-                          <th key={k} style={{textAlign:"left",padding:"8px 10px",fontWeight:600,color:"var(--ink)",textTransform:"capitalize",whiteSpace:"nowrap"}}>{k}</th>
-                        ))}
+                        {Object.keys(industry.pay[0]).filter(k=>k!=="tier").map(k=>{
+                          const LABELS={analyst:"Analyst",associate:"Associate",vp:"VP",director:"Director",md:"MD",partner:"Partner",principal:"Principal",pm:"PM",senior:"Senior PM",trader:"Trader",junior:"Junior",mid:"Mid-Level",lead:"Lead"};
+                          return <th key={k} style={{textAlign:"left",padding:"8px 10px",fontWeight:600,color:"var(--ink)",whiteSpace:"nowrap"}}>{LABELS[k]||k.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase())}</th>;
+                        })}
                       </tr>
                     </thead>
                     <tbody>

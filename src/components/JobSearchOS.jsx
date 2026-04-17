@@ -1341,33 +1341,12 @@ function dedupeJobsByUrl(jobs = []) {
 
 /* ─── NAV CONFIG ────────────────────────────────────────────────────────── */
 const NAV = [
-  { section: "Home", items: [
-    { id:"dashboard", icon:"⚡", label:"Dashboard" },
-    { id:"recommended", icon:"🎯", label:"Recommended" },
-  ]},
-  { section: "Discover", items: [
-    { id:"scout",      icon:"🔍", label:"Jobs" },
-    { id:"pipeline",  icon:"🗃", label:"CRM" },
-    { id:"salaries",  icon:"💰", label:"Salary Insights" },
-    { id:"research",  icon:"🏢", label:"Company Research" },
-  ]},
-  { section: "Prepare", items: [
-    { id:"playbooks",  icon:"📖", label:"Playbooks" },
-    { id:"cv",         icon:"📄", label:"CV + Cover Letters" },
-    { id:"skills",    icon:"📊", label:"Skills Gap" },
-  ]},
-  { section: "Practice", items: [
-    { id:"interview",  icon:"🎙", label:"Interview Prep" },
-  ]},
-  { section: "Network", items: [
-    { id:"networking",  icon:"🤝", label:"Networking" },
-    { id:"alerts",      icon:"🔔", label:"Job Alerts" },
-  ]},
-  { section: "Apply", items: [
-    { id:"extension",  icon:"🚀", label:"Auto Apply" },
-  ]},
-  { section: "Account", items: [
-    { id:"profile",    icon:"👤", label:"My Profile" },
+  { section: "", items: [
+    { id:"jobs",       icon:"🔍", label:"Jobs" },
+    { id:"cv",         icon:"📄", label:"CV Studio" },
+    { id:"interview",  icon:"🎙", label:"Interview" },
+    { id:"pipeline",   icon:"🗃", label:"CRM" },
+    { id:"profile",    icon:"👤", label:"Profile" },
   ]},
 ];
 
@@ -5973,13 +5952,131 @@ function JobAlerts() {
   );
 }
 
+/* ════════════════════════════════════════════════════════════════════════════
+   TAB BAR (reusable)
+══════════════════════════════════════════════════════════════════════════════ */
+function TabBar({ tabs, active, onChange }) {
+  return (
+    <div style={{display:"flex",gap:0,borderBottom:"1px solid var(--border2)",marginBottom:16}}>
+      {tabs.map(t=>(
+        <button key={t.id} onClick={()=>onChange(t.id)} style={{
+          padding:"8px 16px",fontSize:13,fontWeight:active===t.id?600:400,cursor:"pointer",
+          color:active===t.id?"var(--ink)":"var(--ink3)",background:"none",border:"none",
+          borderBottom:active===t.id?"2px solid var(--gold)":"2px solid transparent",
+          transition:"all 0.15s",
+        }}>{t.label}</button>
+      ))}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   UNIFIED: JOBS (Scout + Recommended + Salary + Company Research + Alerts)
+══════════════════════════════════════════════════════════════════════════════ */
+function UnifiedJobs({ jobs, setJobs, profile }) {
+  const [tab, setTab] = useState("scout");
+  const TABS = [{id:"scout",label:"Find Jobs"},{id:"recommended",label:"Recommended"},{id:"salaries",label:"Salaries"},{id:"research",label:"Research"}];
+  return (
+    <div className="page">
+      <div className="section-header"><div><div className="section-title">Jobs</div></div></div>
+      <TabBar tabs={TABS} active={tab} onChange={setTab}/>
+      {tab==="scout" && <JobScout jobs={jobs} setJobs={setJobs} profile={profile}/>}
+      {tab==="recommended" && <RecommendedJobs jobs={jobs} setJobs={setJobs} profile={profile}/>}
+      {tab==="salaries" && <SalaryInsights/>}
+      {tab==="research" && <CompanyResearch/>}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   UNIFIED: CV STUDIO (CV Editor + Skills Gap + Cover Letters)
+══════════════════════════════════════════════════════════════════════════════ */
+function UnifiedCV({ jobs }) {
+  const [tab, setTab] = useState("editor");
+  const TABS = [{id:"editor",label:"CV Editor"},{id:"skills",label:"Skills Gap"},{id:"cover",label:"Cover Letters"}];
+  return (
+    <div className="page">
+      <div className="section-header"><div><div className="section-title">CV Studio</div></div></div>
+      <TabBar tabs={TABS} active={tab} onChange={setTab}/>
+      {tab==="editor" && <CVStudio jobs={jobs}/>}
+      {tab==="skills" && <SkillsGap/>}
+      {tab==="cover" && <CoverLetterTab jobs={jobs}/>}
+    </div>
+  );
+}
+
+function CoverLetterTab({ jobs }) {
+  const { user } = useAuth();
+  const [cv, setCv] = useState("");
+  const [jobDesc, setJobDesc] = useState("");
+  const [letter, setLetter] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    supabase.from('profiles').select('cv_text').eq('user_id', user.id).single().then(({data})=>{
+      if (data?.cv_text) setCv(data.cv_text);
+    });
+  }, [user]);
+
+  const generate = async () => {
+    if (!jobDesc) return;
+    setLoading(true);
+    try {
+      const prompt = `Write a professional, concise cover letter for this job. Use details from the CV to make it specific. Keep it under 300 words. Do not use placeholder brackets.\n\nCV:\n${cv.slice(0,3000)}\n\nJob Description:\n${jobDesc.slice(0,3000)}`;
+      const res = await callClaude(prompt);
+      setLetter(res);
+    } catch { setLetter("Failed to generate. Try again."); }
+    setLoading(false);
+  };
+
+  return (
+    <div>
+      <div className="grid" style={{gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+        <div><div className="fs11 t-ink3 mb4">Your CV {cv?"✅":""}</div><textarea className="input" rows={5} value={cv} onChange={e=>setCv(e.target.value)} placeholder="Auto-loads from profile..." style={{fontSize:11}}/></div>
+        <div><div className="fs11 t-ink3 mb4">Target Job Description</div><textarea className="input" rows={5} value={jobDesc} onChange={e=>setJobDesc(e.target.value)} placeholder="Paste the job description..." style={{fontSize:11}}/></div>
+      </div>
+      <button className="btn btn-primary" onClick={generate} disabled={loading||!jobDesc}>{loading?"⏳ Writing...":"Generate Cover Letter"}</button>
+      {letter && (
+        <div className="card mt12">
+          <div className="flex items-c g8 mb8"><div className="fs12 fw6">Generated Cover Letter</div><button className="btn btn-ghost btn-xs" onClick={()=>navigator.clipboard.writeText(letter)}>Copy</button></div>
+          <div style={{fontSize:13,color:"var(--ink2)",lineHeight:1.8,whiteSpace:"pre-wrap"}}>{letter}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   UNIFIED: INTERVIEW (Prep + Playbooks)
+══════════════════════════════════════════════════════════════════════════════ */
+function UnifiedInterview() {
+  const [tab, setTab] = useState("prep");
+  const TABS = [{id:"prep",label:"Mock Interview"},{id:"playbooks",label:"Playbooks"}];
+  return (
+    <div className="page">
+      <div className="section-header"><div><div className="section-title">Interview</div></div></div>
+      <TabBar tabs={TABS} active={tab} onChange={setTab}/>
+      {tab==="prep" && <Interview/>}
+      {tab==="playbooks" && <Playbooks/>}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   UNIFIED: CRM (Pipeline + Networking)
+══════════════════════════════════════════════════════════════════════════════ */
+function UnifiedCRM({ jobs, setJobs }) {
+  return (
+    <div className="page">
+      <Pipeline jobs={jobs} setJobs={setJobs}/>
+    </div>
+  );
+}
+
 const PAGE_TITLES = {
-  dashboard:"Dashboard", recommended:"Recommended Jobs", jobs:"Job Board",
-  websites:"Website Manager", pipeline:"CRM", playbooks:"Playbooks",
-  cv:"CV + Cover Letters", interview:"Interview Prep",
-  extension:"Auto Apply", profile:"My Profile", admin:"Admin Console",
-  scout:"Jobs", salaries:"Salary Insights", research:"Company Research",
-  skills:"Skills Gap", networking:"Networking", alerts:"Job Alerts",
+  jobs:"Jobs", cv:"CV Studio", interview:"Interview", pipeline:"CRM",
+  profile:"Profile", admin:"Admin Console",
 };
 
 /* ════════════════════════════════════════════════════════════════════════════
@@ -5994,6 +6091,7 @@ const SCOUT_MODES = [
 ];
 
 function JobScout({ jobs: existingJobs, setJobs: setExistingJobs, profile }) {
+  const { user } = useAuth();
   const [mode, setMode] = useState(profile.track === "consulting" ? "mc" : profile.track === "trading" ? "st" : profile.track === "am" ? "im" : profile.track || "ib");
   const [scoutJobs, setScoutJobs] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -6035,6 +6133,7 @@ function JobScout({ jobs: existingJobs, setJobs: setExistingJobs, profile }) {
   };
 
   const importSelected = async () => {
+    if (!user) return;
     const toImport = scoutJobs.filter(j => selectedIds.has(j.id) && !imported.has(j.id));
     for (const sj of toImport) {
       const newJob = {
@@ -6052,11 +6151,11 @@ function JobScout({ jobs: existingJobs, setJobs: setExistingJobs, profile }) {
         posted_at: sj.posted_date || null,
         tags: [mode, "scout-import"],
       };
-      await upsertJob(newJob);
+      await upsertJob(user.id, newJob);
     }
     setImported(prev => new Set([...prev, ...toImport.map(j => j.id)]));
     // Refresh main jobs list
-    const refreshed = await fetchJobs();
+    const refreshed = await fetchJobs(user.id);
     setExistingJobs(refreshed);
     setSelectedIds(new Set());
   };
@@ -6159,7 +6258,7 @@ const ADMIN_PASSWORD = "jobos2026";
 
 export default function JobSearchOS() {
   const { user, profile: authProfile, signOut } = useAuth();
-  const [page, setPage] = useState("dashboard");
+  const [page, setPage] = useState("jobs");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [jobs, setJobs] = useState([]);
   const [dbLoaded, setDbLoaded] = useState(false);
@@ -6234,20 +6333,10 @@ export default function JobSearchOS() {
 
   const renderPage = () => {
     switch (page) {
-      case "dashboard":    return <Dashboard jobs={jobs} profile={profile}/>;
-      case "recommended":  return <RecommendedJobs jobs={jobs} setJobs={setJobsWithDb} profile={profile}/>;
-      case "scout":        return <JobScout jobs={jobs} setJobs={setJobs} profile={profile}/>;
-      case "jobs":         return <JobBoard jobs={jobs} setJobs={setJobsWithDb} profile={profile}/>;
-
-      case "pipeline":     return <Pipeline jobs={jobs} setJobs={setJobsWithDb}/>;
-      case "salaries":     return <SalaryInsights/>;
-      case "research":     return <CompanyResearch/>;
-      case "skills":       return <SkillsGap/>;
-      case "networking":   return <Networking/>;
-      case "alerts":       return <JobAlerts/>;
-      case "playbooks":    return <Playbooks/>;
-      case "cv":           return <CVStudio jobs={jobs}/>;
-      case "interview":    return <Interview/>;
+      case "jobs":         return <UnifiedJobs jobs={jobs} setJobs={setJobsWithDb} profile={profile}/>;
+      case "cv":           return <UnifiedCV jobs={jobs}/>;
+      case "interview":    return <UnifiedInterview/>;
+      case "pipeline":     return <UnifiedCRM jobs={jobs} setJobs={setJobsWithDb}/>;
       case "extension":    return (
         <div className="page" style={{textAlign:"center",paddingTop:80}}>
           <div style={{fontSize:64,marginBottom:16}}>🚀</div>

@@ -1219,6 +1219,158 @@ const PLAYBOOKS = {
         { q:"What unique perspective do you bring to the cohort?", cat:"Behavioral", diff:"Advanced" },
       ],
     }
+  },
+  pe: {
+    icon: "🦅", name: "Private Equity",
+    undergrad: {
+      process: "IB Analyst → PE Associate → VP → Principal → Partner",
+      prereqs: ["2+ years IB/consulting", "LBO modeling proficiency", "Strong deal experience", "CFA (nice-to-have)"],
+      milestones: [
+        { week:"WK 1–2", title:"Foundation", desc:"Master paper LBO (cold, 5 mins). Review 10 recent PE deals. Understand fund structures (LP/GP, carried interest, management fees)." },
+        { week:"WK 3–4", title:"Modeling Deep Dive", desc:"Build 3 full LBO models from scratch. Practice add-on acquisition modeling. Understand credit agreements and debt covenants." },
+        { week:"WK 5–6", title:"Case Studies", desc:"Prepare 5 investment pitches (long and short). Practice due diligence frameworks. Understand 100-day plans and value creation levers." },
+        { week:"WK 7–8", title:"Headhunter Prep", desc:"Register with key PE headhunters (Henkel, CPI, Dynamics, KEA). Update resume to highlight deal experience quantitatively." },
+        { week:"WK 9–10", title:"Interview Sprint", desc:"Mock case studies and LBO tests. Practice 'walk me through a deal' stories. Nail the 'why PE' narrative." },
+        { week:"WK 11–12", title:"Process Execution", desc:"Superday rounds. Negotiate offers. Evaluate fund size, strategy fit, and culture." },
+      ],
+      questions: [
+        { q:"Walk me through a paper LBO.", cat:"Technical", diff:"Core" },
+        { q:"You have a company doing £50M EBITDA at 8x entry. Walk me through how you'd create value.", cat:"Technical", diff:"Core" },
+        { q:"Tell me about a deal you worked on. What would you have done differently?", cat:"Deal Experience", diff:"Core" },
+        { q:"Why PE over staying in banking?", cat:"Motivation", diff:"Core" },
+        { q:"What makes a good LBO candidate?", cat:"Technical", diff:"Core" },
+        { q:"How do you think about management teams in due diligence?", cat:"Judgment", diff:"Advanced" },
+        { q:"Walk me through the key drivers of IRR.", cat:"Technical", diff:"Core" },
+        { q:"Pitch me a company you'd want to buy.", cat:"Investment Acumen", diff:"Advanced" },
+        { q:"How would you evaluate a platform vs. add-on acquisition?", cat:"Technical", diff:"Advanced" },
+        { q:"What's happening in the PE market right now?", cat:"Market Awareness", diff:"Core" },
+      ],
+    },
+    experienced: {
+      process: "Direct PE hire or MBA → Associate → VP → Principal",
+      prereqs: ["Deal experience or operational background", "LBO + operational modeling", "Sector expertise preferred", "Strong network"],
+      milestones: [
+        { week:"WK 1–2", title:"Positioning", desc:"Define sector focus and fund size sweet spot. Map target firms. Update CV to emphasize deal/operational metrics." },
+        { week:"WK 3–4", title:"Technical Refresh", desc:"Rebuild LBO skills if rusty. Practice paper LBOs cold. Review recent deals in target sectors." },
+        { week:"WK 5–6", title:"Network Activation", desc:"Reach out to PE professionals and headhunters. Attend industry events. Build referral pipeline." },
+        { week:"WK 7–8", title:"Case & Pitch Prep", desc:"Prepare 3 investment theses. Practice due diligence walkthroughs. Mock operational improvement plans." },
+        { week:"WK 9–12", title:"Interview Execution", desc:"Multi-round processes. Case studies, modeling tests, partner meetings. Negotiate terms." },
+      ],
+      questions: [
+        { q:"Walk me through your most impactful deal and your specific contribution.", cat:"Experience", diff:"Core" },
+        { q:"How do you source proprietary deals?", cat:"Judgment", diff:"Advanced" },
+        { q:"What's your approach to post-acquisition value creation?", cat:"Operational", diff:"Advanced" },
+      ],
+    }
+  },
+  vc: {
+    icon: "🚀", name: "Venture Capital",
+    undergrad: {
+      process: "Analyst/Associate → Principal → Partner",
+      prereqs: ["Startup experience or strong tech knowledge", "Understanding of cap tables and term sheets", "Portfolio or side projects", "Active in startup ecosystem"],
+      milestones: [
+        { week:"WK 1–2", title:"Ecosystem Immersion", desc:"Read 50 VC blogs (a16z, First Round, Sequoia). Understand fund economics. Map the UK/EU VC landscape." },
+        { week:"WK 3–4", title:"Framework Building", desc:"Learn market sizing (TAM/SAM/SOM). Practice startup evaluation frameworks. Understand unit economics." },
+        { week:"WK 5–6", title:"Deal Memo Practice", desc:"Write 3 investment memos on real startups. Practice sourcing — find 5 startups you'd invest in and explain why." },
+        { week:"WK 7–8", title:"Network Building", desc:"Attend demo days. Connect with founders and VCs on Twitter/LinkedIn. Join VC fellowships (Contrary, Rough Draft, 8VC)." },
+        { week:"WK 9–10", title:"Application Sprint", desc:"Apply to VC analyst programs. Leverage network for warm intros. Tailor each application with a sourced deal." },
+        { week:"WK 11–12", title:"Interview Execution", desc:"Practice investment discussions, market mapping exercises, and 'pitch me a startup' questions." },
+      ],
+      questions: [
+        { q:"Pitch me a startup you'd invest in.", cat:"Investment Thesis", diff:"Core" },
+        { q:"How do you evaluate a pre-revenue company?", cat:"Technical", diff:"Core" },
+        { q:"What's a sector you're excited about and why?", cat:"Market Awareness", diff:"Core" },
+        { q:"Walk me through a term sheet.", cat:"Technical", diff:"Advanced" },
+        { q:"How do you think about market timing?", cat:"Judgment", diff:"Advanced" },
+        { q:"Tell me about a company everyone loves that you think is overvalued.", cat:"Contrarian Thinking", diff:"Advanced" },
+      ],
+    },
+    experienced: {
+      process: "Operator/founder → VC Principal → Partner",
+      prereqs: ["Operating experience in tech/startups", "Investment or board experience", "Strong founder network", "Published thinking on markets"],
+      milestones: [
+        { week:"WK 1–2", title:"Thesis Development", desc:"Define investment thesis and sector focus. Write 2 published pieces demonstrating market insight." },
+        { week:"WK 3–4", title:"Deal Flow Building", desc:"Source 10 warm intros to startups. Attend 3 demo days. Build proprietary pipeline." },
+        { week:"WK 5–8", title:"Fund Targeting", desc:"Map target funds by stage, sector, and geography. Get warm intros via portfolio founders and coinvestors." },
+        { week:"WK 9–12", title:"Process", desc:"Partner meetings. Present investment thesis. Demonstrate deal sourcing ability." },
+      ],
+      questions: [
+        { q:"What's your investment thesis?", cat:"Strategy", diff:"Core" },
+        { q:"How would you source deals that the partners aren't already seeing?", cat:"Value-Add", diff:"Advanced" },
+      ],
+    }
+  },
+  am: {
+    icon: "📊", name: "Asset Management",
+    undergrad: {
+      process: "Analyst → PM → Senior PM → CIO",
+      prereqs: ["Strong quantitative skills", "CFA Level 1 (in progress)", "Understanding of financial markets", "Stock pitch experience"],
+      milestones: [
+        { week:"WK 1–2", title:"Market Foundation", desc:"Understand asset classes (equities, fixed income, alternatives). Read Intelligent Investor + Security Analysis intro chapters." },
+        { week:"WK 3–4", title:"Stock Pitch Prep", desc:"Build 2 detailed stock pitches with DCF, comps, and catalyst analysis. Practice presenting in 5 minutes." },
+        { week:"WK 5–6", title:"Portfolio Theory", desc:"Understand modern portfolio theory, factor investing, risk management frameworks. Practice constructing sample portfolios." },
+        { week:"WK 7–8", title:"Networking", desc:"Reach out to PMs and analysts. Join investment clubs. Enter stock pitch competitions." },
+        { week:"WK 9–10", title:"Application Sprint", desc:"Apply to AM grad schemes. Include stock pitch with every application. Follow up systematically." },
+        { week:"WK 11–12", title:"Interview Execution", desc:"Practice stock pitches, market discussions, and 'what would you do with £1M' questions." },
+      ],
+      questions: [
+        { q:"Pitch me a stock — long or short.", cat:"Investment Acumen", diff:"Core" },
+        { q:"How do you value a company?", cat:"Technical", diff:"Core" },
+        { q:"What's happening in markets right now?", cat:"Market Awareness", diff:"Core" },
+        { q:"How would you construct a portfolio given current conditions?", cat:"Portfolio Management", diff:"Advanced" },
+        { q:"What's your investment philosophy?", cat:"Judgment", diff:"Core" },
+        { q:"Walk me through a time your investment thesis was wrong.", cat:"Self-Awareness", diff:"Advanced" },
+      ],
+    },
+    experienced: {
+      process: "Lateral hire → PM → Senior PM",
+      prereqs: ["CFA Charter or progress", "Track record (personal or professional)", "Sector expertise", "Published research"],
+      milestones: [
+        { week:"WK 1–4", title:"Track Record Prep", desc:"Document investment track record. Prepare 3 case studies of best and worst calls. Quantify alpha generated." },
+        { week:"WK 5–8", title:"Network & Target", desc:"Map target firms by strategy. Get introductions through industry conferences and CFA network." },
+        { week:"WK 9–12", title:"Interview Execution", desc:"Present investment cases, discuss portfolio construction, demonstrate risk management philosophy." },
+      ],
+      questions: [
+        { q:"Walk me through your best and worst investment.", cat:"Track Record", diff:"Core" },
+        { q:"How do you manage risk in a concentrated portfolio?", cat:"Risk Management", diff:"Advanced" },
+      ],
+    }
+  },
+  trading: {
+    icon: "⚡", name: "Sales & Trading",
+    undergrad: {
+      process: "Summer Analyst → Full-Time → VP → MD",
+      prereqs: ["Strong mental math", "Understanding of markets and products", "Probability/statistics knowledge", "Real-time market awareness"],
+      milestones: [
+        { week:"WK 1–2", title:"Product Knowledge", desc:"Understand equities, FX, rates, credit, commodities. Learn Greeks and basic options pricing. Read market news daily." },
+        { week:"WK 3–4", title:"Mental Math & Brainteasers", desc:"Practice mental math daily (Zetamac 80+). Work through probability brainteasers. Understand expected value." },
+        { week:"WK 5–6", title:"Market Awareness", desc:"Trade a paper portfolio. Form daily market views. Understand what moves each asset class." },
+        { week:"WK 7–8", title:"Trade Ideas", desc:"Prepare 3 trade ideas with clear thesis, risk/reward, and catalyst. Practice explaining in 60 seconds." },
+        { week:"WK 9–10", title:"Application Sprint", desc:"Apply to S&T programs. Specify desk preference. Show genuine market interest in applications." },
+        { week:"WK 11–12", title:"Interview Execution", desc:"Mock market-making games, probability questions, and 'give me a trade' scenarios." },
+      ],
+      questions: [
+        { q:"Give me a trade idea right now.", cat:"Market Acumen", diff:"Core" },
+        { q:"I flip a coin. Heads you win £150, tails you lose £100. Do you play?", cat:"Probability", diff:"Core" },
+        { q:"What did the S&P do yesterday and why?", cat:"Market Awareness", diff:"Core" },
+        { q:"How would you price this option?", cat:"Technical", diff:"Advanced" },
+        { q:"You're a market maker in X. I want to buy 10,000 shares. Quote me.", cat:"Market Making", diff:"Advanced" },
+        { q:"Explain convexity to me like I'm 12.", cat:"Communication", diff:"Core" },
+      ],
+    },
+    experienced: {
+      process: "Desk move or lateral hire → Senior Trader/Salesperson",
+      prereqs: ["P&L track record", "Product expertise", "Client relationships", "Risk management experience"],
+      milestones: [
+        { week:"WK 1–4", title:"Positioning", desc:"Define product and desk focus. Quantify P&L contribution. Map target desks and firms." },
+        { week:"WK 5–8", title:"Network & Process", desc:"Activate industry contacts. Work with headhunters. Interview across target desks." },
+        { week:"WK 9–12", title:"Execution", desc:"Final rounds, desk visits, offer negotiation." },
+      ],
+      questions: [
+        { q:"Walk me through your biggest winning and losing trade.", cat:"Track Record", diff:"Core" },
+        { q:"How do you manage tail risk?", cat:"Risk Management", diff:"Advanced" },
+      ],
+    }
   }
 };
 
@@ -1342,13 +1494,213 @@ function dedupeJobsByUrl(jobs = []) {
 /* ─── NAV CONFIG ────────────────────────────────────────────────────────── */
 const NAV = [
   { section: "", items: [
+    { id:"onboarding", icon:"👋", label:"Get Started" },
+    { id:"playbooks",  icon:"📖", label:"Playbooks" },
     { id:"jobs",       icon:"🔍", label:"Jobs" },
     { id:"cv",         icon:"📄", label:"CV Studio" },
     { id:"interview",  icon:"🎙", label:"Interview" },
     { id:"pipeline",   icon:"🗃", label:"CRM" },
+    { id:"extension",  icon:"🚀", label:"Auto Apply" },
     { id:"profile",    icon:"👤", label:"Profile" },
   ]},
 ];
+
+/* ════════════════════════════════════════════════════════════════════════════
+   PAGE: DASHBOARD
+══════════════════════════════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════════════════════════
+   PAGE: ONBOARDING — Upload CV + Details, then launch CV Studio & Jobs Rec
+══════════════════════════════════════════════════════════════════════════════ */
+function Onboarding({ setPage }) {
+  const { user } = useAuth();
+  const [step, setStep] = useState(1);
+  const [cvText, setCvText] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [form, setForm] = useState({ name:"", track:"ib", level:"undergrad", location:"London", targets:"", strengths:"" });
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysis, setAnalysis] = useState(null);
+
+  // Load existing profile data
+  useEffect(() => {
+    if (!user) return;
+    supabase.from('profiles').select('*').eq('user_id', user.id).single().then(({data})=>{
+      if (data) {
+        setForm(f => ({...f, name: data.display_name || "", track: data.track || "ib", level: data.level || "undergrad", location: data.location || "London"}));
+        if (data.cv_text) setCvText(data.cv_text);
+      }
+    });
+  }, [user]);
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploading(true);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setCvText(ev.target.result);
+      setUploading(false);
+    };
+    reader.readAsText(file);
+  };
+
+  const saveProfile = async () => {
+    if (!user) return;
+    await supabase.from('profiles').update({
+      display_name: form.name,
+      track: form.track,
+      level: form.level,
+      location: form.location,
+      target_firms: form.targets,
+      strengths: form.strengths,
+      cv_text: cvText,
+    }).eq('user_id', user.id);
+  };
+
+  const analyzeCV = async () => {
+    if (!cvText.trim()) return;
+    setAnalyzing(true);
+    try {
+      await saveProfile();
+      const prompt = `Analyze this CV for a ${form.level === "undergrad" ? "student/recent grad" : "experienced professional"} targeting ${PLAYBOOKS[form.track]?.name || form.track}. Return JSON only:
+{"summary":"2-3 sentence assessment","strengths":["..."],"gaps":["..."],"score":0-100,"recommended_roles":["specific role titles"],"immediate_actions":["3 specific things to do right now"]}
+
+CV:
+${cvText.slice(0,5000)}`;
+      const res = await callClaude(prompt);
+      const parsed = JSON.parse(res.replace(/```json?\n?/g,"").replace(/```/g,"").trim());
+      setAnalysis(parsed);
+      setStep(3);
+    } catch { setAnalysis(null); }
+    setAnalyzing(false);
+  };
+
+  const TRACKS = Object.entries(PLAYBOOKS).filter(([k])=>k!=="postgrad").map(([k,v])=>({id:k, label:v.name, icon:v.icon}));
+
+  return (
+    <div className="page">
+      {/* Step 1: Your Details */}
+      {step === 1 && (
+        <>
+          <div style={{textAlign:"center",marginBottom:32}}>
+            <div style={{fontSize:40,marginBottom:12}}>👋</div>
+            <div className="section-title" style={{fontSize:22}}>Welcome to Job Search OS</div>
+            <div className="fs13 t-ink3" style={{maxWidth:440,margin:"8px auto",lineHeight:1.7}}>Let's get you set up. Tell us about yourself and upload your CV — we'll do the heavy lifting from there.</div>
+          </div>
+          <div className="card" style={{maxWidth:560,margin:"0 auto"}}>
+            <div className="fs14 fw6 mb12">About You</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div style={{gridColumn:"1/-1"}}><div className="fs11 t-ink3 mb4">Your Name</div><input className="input" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="Full name"/></div>
+              <div><div className="fs11 t-ink3 mb4">Career Track</div>
+                <select className="input" value={form.track} onChange={e=>setForm(f=>({...f,track:e.target.value}))}>
+                  {TRACKS.map(t=><option key={t.id} value={t.id}>{t.icon} {t.label}</option>)}
+                </select>
+              </div>
+              <div><div className="fs11 t-ink3 mb4">Level</div>
+                <select className="input" value={form.level} onChange={e=>setForm(f=>({...f,level:e.target.value}))}>
+                  <option value="undergrad">Student / Recent Grad</option>
+                  <option value="experienced">Experienced Hire</option>
+                </select>
+              </div>
+              <div><div className="fs11 t-ink3 mb4">Location</div><input className="input" value={form.location} onChange={e=>setForm(f=>({...f,location:e.target.value}))} placeholder="e.g. London"/></div>
+              <div><div className="fs11 t-ink3 mb4">Target Firms (optional)</div><input className="input" value={form.targets} onChange={e=>setForm(f=>({...f,targets:e.target.value}))} placeholder="e.g. Goldman, McKinsey, Blackstone"/></div>
+              <div style={{gridColumn:"1/-1"}}><div className="fs11 t-ink3 mb4">Key Strengths (optional)</div><input className="input" value={form.strengths} onChange={e=>setForm(f=>({...f,strengths:e.target.value}))} placeholder="e.g. Financial modeling, public speaking, Python"/></div>
+            </div>
+            <button className="btn btn-primary mt16" onClick={()=>{saveProfile();setStep(2);}} style={{width:"100%"}}>Continue →</button>
+          </div>
+        </>
+      )}
+
+      {/* Step 2: Upload CV */}
+      {step === 2 && (
+        <>
+          <div style={{textAlign:"center",marginBottom:24}}>
+            <div style={{fontSize:40,marginBottom:12}}>📄</div>
+            <div className="section-title" style={{fontSize:22}}>Upload Your CV</div>
+            <div className="fs13 t-ink3" style={{maxWidth:440,margin:"8px auto",lineHeight:1.7}}>We'll analyse it against your target track and tell you exactly what to fix.</div>
+          </div>
+          <div className="card" style={{maxWidth:560,margin:"0 auto"}}>
+            <div style={{border:"2px dashed var(--border2)",borderRadius:10,padding:"32px 24px",textAlign:"center",marginBottom:12}}>
+              <input type="file" accept=".txt,.pdf,.doc,.docx" onChange={handleFileUpload} style={{display:"none"}} id="cv-upload"/>
+              <label htmlFor="cv-upload" style={{cursor:"pointer"}}>
+                <div style={{fontSize:32,marginBottom:8}}>📎</div>
+                <div className="fw6 fs13">{uploading ? "Reading file..." : "Click to upload your CV"}</div>
+                <div className="fs11 t-ink3 mt4">TXT, PDF, DOC supported • Or paste below</div>
+              </label>
+            </div>
+            <textarea className="input" rows={8} value={cvText} onChange={e=>setCvText(e.target.value)} placeholder="Or paste your CV text here..." style={{fontSize:12,lineHeight:1.7}}/>
+            <div className="flex g8 mt12">
+              <button className="btn btn-outline" onClick={()=>setStep(1)}>← Back</button>
+              <button className="btn btn-primary flex-1" onClick={analyzeCV} disabled={!cvText.trim()||analyzing}>
+                {analyzing ? "⏳ Analysing your CV..." : "Analyse & Continue →"}
+              </button>
+              {!cvText.trim() && <button className="btn btn-outline" onClick={()=>{saveProfile();setStep(3);}}>Skip for now</button>}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Step 3: Results + Next Steps */}
+      {step === 3 && (
+        <>
+          <div style={{textAlign:"center",marginBottom:24}}>
+            <div style={{fontSize:40,marginBottom:12}}>✅</div>
+            <div className="section-title" style={{fontSize:22}}>You're All Set</div>
+            <div className="fs13 t-ink3" style={{maxWidth:440,margin:"8px auto",lineHeight:1.7}}>Here's what we found — and where to go next.</div>
+          </div>
+
+          {analysis && (
+            <div style={{maxWidth:600,margin:"0 auto 24px"}}>
+              <div className="card mb12">
+                <div className="flex items-c g12 mb8">
+                  <div className="fw7 fs24" style={{color:analysis.score>=70?"var(--green)":analysis.score>=40?"var(--gold)":"var(--red)"}}>{analysis.score}%</div>
+                  <div><div className="fs12 fw6">CV Readiness Score</div><div className="fs11 t-ink3">For {PLAYBOOKS[form.track]?.name || form.track}</div></div>
+                </div>
+                <div className="fs13 t-ink2" style={{lineHeight:1.7}}>{analysis.summary}</div>
+              </div>
+              <div className="grid" style={{gridTemplateColumns:"1fr 1fr",gap:10}}>
+                <div className="card"><div className="fs12 fw6 mb6" style={{color:"var(--green)"}}>✓ Strengths</div>
+                  {(analysis.strengths||[]).map((s,i)=><div key={i} className="fs12 t-ink2 mb4">• {s}</div>)}
+                </div>
+                <div className="card"><div className="fs12 fw6 mb6" style={{color:"var(--red)"}}>✗ Gaps</div>
+                  {(analysis.gaps||[]).map((g,i)=><div key={i} className="fs12 t-ink2 mb4">• {g}</div>)}
+                </div>
+              </div>
+              {analysis.immediate_actions && (
+                <div className="card mt10" style={{borderLeft:"3px solid var(--gold)"}}>
+                  <div className="fs12 fw6 mb6">⚡ Do These Now</div>
+                  {analysis.immediate_actions.map((a,i)=><div key={i} className="fs12 t-ink2 mb4">{i+1}. {a}</div>)}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div style={{maxWidth:600,margin:"0 auto",display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <button className="card" onClick={()=>setPage("playbooks")} style={{cursor:"pointer",textAlign:"left",border:"1px solid var(--border2)",background:"var(--surface2)"}}>
+              <div style={{fontSize:24,marginBottom:6}}>📖</div>
+              <div className="fw6 fs13">Playbooks</div>
+              <div className="fs11 t-ink3 mt2">Your career prep roadmap</div>
+            </button>
+            <button className="card" onClick={()=>setPage("jobs")} style={{cursor:"pointer",textAlign:"left",border:"1px solid var(--border2)",background:"var(--surface2)"}}>
+              <div style={{fontSize:24,marginBottom:6}}>🔍</div>
+              <div className="fw6 fs13">Find Jobs</div>
+              <div className="fs11 t-ink3 mt2">Browse recommended roles</div>
+            </button>
+            <button className="card" onClick={()=>setPage("cv")} style={{cursor:"pointer",textAlign:"left",border:"1px solid var(--border2)",background:"var(--surface2)"}}>
+              <div style={{fontSize:24,marginBottom:6}}>📄</div>
+              <div className="fw6 fs13">CV Studio</div>
+              <div className="fs11 t-ink3 mt2">Refine and tailor your CV</div>
+            </button>
+            <button className="card" onClick={()=>setPage("interview")} style={{cursor:"pointer",textAlign:"left",border:"1px solid var(--border2)",background:"var(--surface2)"}}>
+              <div style={{fontSize:24,marginBottom:6}}>🎙</div>
+              <div className="fw6 fs13">Interview Prep</div>
+              <div className="fs11 t-ink3 mt2">AI mock interviews</div>
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 /* ════════════════════════════════════════════════════════════════════════════
    PAGE: DASHBOARD
@@ -6051,14 +6403,9 @@ function CoverLetterTab({ jobs }) {
    UNIFIED: INTERVIEW (Prep + Playbooks)
 ══════════════════════════════════════════════════════════════════════════════ */
 function UnifiedInterview() {
-  const [tab, setTab] = useState("prep");
-  const TABS = [{id:"prep",label:"Mock Interview"},{id:"playbooks",label:"Playbooks"}];
   return (
     <div className="page">
-      <div className="section-header"><div><div className="section-title">Interview</div></div></div>
-      <TabBar tabs={TABS} active={tab} onChange={setTab}/>
-      {tab==="prep" && <Interview/>}
-      {tab==="playbooks" && <Playbooks/>}
+      <Interview/>
     </div>
   );
 }
@@ -6075,7 +6422,8 @@ function UnifiedCRM({ jobs, setJobs }) {
 }
 
 const PAGE_TITLES = {
-  jobs:"Jobs", cv:"CV Studio", interview:"Interview", pipeline:"CRM",
+  onboarding:"Get Started", playbooks:"Playbooks", jobs:"Jobs", cv:"CV Studio",
+  interview:"Interview", pipeline:"CRM", extension:"Auto Apply",
   profile:"Profile", admin:"Admin Console",
 };
 
@@ -6258,7 +6606,7 @@ const ADMIN_PASSWORD = "jobos2026";
 
 export default function JobSearchOS() {
   const { user, profile: authProfile, signOut } = useAuth();
-  const [page, setPage] = useState("jobs");
+  const [page, setPage] = useState("onboarding");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [jobs, setJobs] = useState([]);
   const [dbLoaded, setDbLoaded] = useState(false);
@@ -6333,6 +6681,8 @@ export default function JobSearchOS() {
 
   const renderPage = () => {
     switch (page) {
+      case "onboarding":   return <Onboarding setPage={setPage}/>;
+      case "playbooks":    return <Playbooks/>;
       case "jobs":         return <UnifiedJobs jobs={jobs} setJobs={setJobsWithDb} profile={profile}/>;
       case "cv":           return <UnifiedCV jobs={jobs}/>;
       case "interview":    return <UnifiedInterview/>;

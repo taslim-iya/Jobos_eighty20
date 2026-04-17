@@ -36,12 +36,29 @@ export function AuthProvider({ children }) {
   }, []);
 
   const fetchProfile = async (userId) => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("profiles")
       .select("*")
       .eq("user_id", userId)
       .single();
-    if (data) setProfile(data);
+    if (data) {
+      setProfile(data);
+    } else if (error && (error.code === 'PGRST116' || !data)) {
+      // No profile row — auto-create one
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const meta = currentUser?.user_metadata || {};
+      const { data: newProfile, error: insertErr } = await supabase
+        .from("profiles")
+        .insert({
+          user_id: userId,
+          display_name: meta.full_name || meta.name || '',
+          email: currentUser?.email || '',
+        })
+        .select()
+        .single();
+      if (newProfile) setProfile(newProfile);
+      else if (insertErr) console.error("Profile auto-create failed:", insertErr);
+    }
   };
 
   const updateProfile = async (updates) => {

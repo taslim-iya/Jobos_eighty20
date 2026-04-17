@@ -1242,26 +1242,45 @@ async function callClaude(prompt, systemPrompt = "", useWebSearch = false) {
   else if (systemPrompt.includes("outreach") || systemPrompt.includes("networking")) useCase = "outreach";
   else if (systemPrompt.includes("Return only a JSON array")) useCase = "website-scan";
 
-  const resp = await fetch(`${SUPABASE_URL}/functions/v1/ai-chat`, {
+  // Try Supabase Edge Function first
+  try {
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/ai-chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${SUPABASE_KEY}`,
+      },
+      body: JSON.stringify({
+        messages: [{ role: "user", content: prompt }],
+        systemPrompt,
+        useCase,
+      }),
+    });
+
+    if (resp.ok) {
+      const data = await resp.json();
+      return data.content || "No response";
+    }
+  } catch {}
+
+  // Fallback to local API proxy
+  const messages = [];
+  if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
+  messages.push({ role: "user", content: prompt });
+
+  const fallback = await fetch("/api/ai", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${SUPABASE_KEY}`,
-    },
-    body: JSON.stringify({
-      messages: [{ role: "user", content: prompt }],
-      systemPrompt,
-      useCase,
-    }),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages, model: "gpt-4o", max_tokens: 3000 }),
   });
 
-  if (!resp.ok) {
-    const err = await resp.json().catch(() => ({ error: "AI request failed" }));
+  if (!fallback.ok) {
+    const err = await fallback.json().catch(() => ({ error: "AI request failed" }));
     throw new Error(err.error || "AI request failed");
   }
 
-  const data = await resp.json();
-  return data.content || "No response";
+  const data = await fallback.json();
+  return data.choices?.[0]?.message?.content || "No response";
 }
 
 async function crawlJobs({ query = "", track = "", level = "", location = "", siteUrl = "" } = {}) {
@@ -1324,29 +1343,31 @@ function dedupeJobsByUrl(jobs = []) {
 const NAV = [
   { section: "Home", items: [
     { id:"dashboard", icon:"⚡", label:"Dashboard" },
-    { id:"recommended", icon:"🎯", label:"Recommended", badge:"NEW", badgeGreen:true },
+    { id:"recommended", icon:"🎯", label:"Recommended" },
   ]},
   { section: "Discover", items: [
-    { id:"scout",      icon:"🔍", label:"Job Scout", badge:"NEW", badgeGreen:true },
-    { id:"jobs",       icon:"📋", label:"Job Board" },
+    { id:"scout",      icon:"🔍", label:"Jobs" },
     { id:"pipeline",  icon:"🗃", label:"CRM" },
+    { id:"salaries",  icon:"💰", label:"Salary Insights" },
+    { id:"research",  icon:"🏢", label:"Company Research" },
   ]},
   { section: "Prepare", items: [
     { id:"playbooks",  icon:"📖", label:"Playbooks" },
     { id:"cv",         icon:"📄", label:"CV + Cover Letters" },
+    { id:"skills",    icon:"📊", label:"Skills Gap" },
   ]},
   { section: "Practice", items: [
     { id:"interview",  icon:"🎙", label:"Interview Prep" },
+  ]},
+  { section: "Network", items: [
+    { id:"networking",  icon:"🤝", label:"Networking" },
+    { id:"alerts",      icon:"🔔", label:"Job Alerts" },
   ]},
   { section: "Apply", items: [
     { id:"extension",  icon:"🚀", label:"Auto Apply" },
   ]},
   { section: "Account", items: [
     { id:"profile",    icon:"👤", label:"My Profile" },
-  ]},
-  { section: "Admin", items: [
-    { id:"admin", icon:"⚙️", label:"Admin Console" },
-    { id:"websites",  icon:"🌐", label:"Website Manager" },
   ]},
 ];
 
@@ -1484,15 +1505,36 @@ function JobBoard({ jobs, setJobs, profile }) {
   const [sortBy, setSortBy] = useState("newest");
   const [showFilters, setShowFilters] = useState(true);
 
-  // Load all jobs from DB
+  // Load jobs from both user DB and scraped jobs API
   useEffect(() => {
     if (!user) return;
-    supabase.from("jobs").select("*").eq("user_id", user.id).order("created_at", { ascending: false }).limit(1000)
-      .then(({ data }) => {
-        setAllJobs(data || []);
-        setSavedIds(new Set((data || []).filter(j => j.stage !== "saved" || j.user_id === user.id).map(j => j.id)));
-        setLoading(false);
-      });
+    Promise.all([
+      supabase.from("jobs").select("*").eq("user_id", user.id).order("created_at", { ascending: false }).limit(1000),
+      fetch("/api/jobs?limit=200").then(r => r.ok ? r.json() : { jobs: [] }).catch(() => ({ jobs: [] })),
+    ]).then(([userResult, scraped]) => {
+      const userJobs = userResult.data || [];
+      const savedSet = new Set(userJobs.map(j => j.id));
+      // Merge scraped jobs, mapping to same shape
+      const scrapedMapped = (scraped.jobs || []).filter(j => !savedSet.has(j.id)).map(j => ({
+        id: j.id,
+        title: j.title,
+        firm: j.company,
+        location: j.location,
+        salary: j.salary || null,
+        source: j.source || 'Scraped',
+        source_url: j.source_url || j.url,
+        url: j.url,
+        description: j.description,
+        type: j.type,
+        posted_date: j.posted_date,
+        created_at: j.scraped_at,
+        stage: 'discover',
+        _scraped: true,
+      }));
+      setAllJobs([...userJobs, ...scrapedMapped]);
+      setSavedIds(new Set(userJobs.map(j => j.id)));
+      setLoading(false);
+    });
   }, [user]);
 
   // Derive unique values for filter options
@@ -2054,9 +2096,19 @@ function WebsiteManager() {
 const SAMPLE_CV = ``;
 
 function CVStudio({ jobs }) {
+  const { user } = useAuth();
   const [tab, setTab] = useState("cv");
   const [clStep, setClStep] = useState(1);
   const [cv, setCv] = useState(SAMPLE_CV);
+
+  // Load saved CV from profile on mount
+  useEffect(() => {
+    if (!user) return;
+    supabase.from('profiles').select('cv_text').eq('user_id', user.id).single()
+      .then(({ data }) => {
+        if (data?.cv_text) setCv(data.cv_text);
+      });
+  }, [user]);
   const [selectedJob, setSelectedJob] = useState(jobs[0] || null);
   const [jobDesc, setJobDesc] = useState("");
   const [extraExp, setExtraExp] = useState("");
@@ -2195,6 +2247,15 @@ You MUST respond by calling the score_ats function.`;
       console.error("Failed to save CV to profile:", err);
     }
   };
+
+  // Auto-save CV every 5 seconds after editing
+  const saveTimerRef = useRef(null);
+  useEffect(() => {
+    if (!cv || cv === SAMPLE_CV) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => saveCvToProfile(cv), 5000);
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
+  }, [cv]);
 
   // AI Auto-Fix CV function
   const autoFixCV = async (rawCv) => {
@@ -3083,8 +3144,8 @@ function Pipeline({ jobs: allJobs, setJobs }) {
   const { user } = useAuth();
   // Only show manually added/saved jobs (no source_id = not from crawler)
   const jobs = allJobs.filter(j => !j.source_id);
-  const stages = ["saved","outreach","applying","interviewing","offer"];
-  const labels = {saved:"Saved",outreach:"Outreach",applying:"Applying",interviewing:"Interviewing",offer:"Offer ✓"};
+  const stages = ["saved","applied","phone_screen","interviewing","offer","rejected"];
+  const labels = {saved:"Saved",applied:"Applied",phone_screen:"Phone Screen",interviewing:"Interview",offer:"Offer ✓",rejected:"Rejected"};
   const [contacts, setContacts] = useState([]);
   const [selectedJobs, setSelectedJobs] = useState(new Set());
   const [deleting, setDeleting] = useState(false);
@@ -5417,65 +5478,109 @@ function RecommendedJobs({ jobs, setJobs, profile }) {
   const { user } = useAuth();
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [profileId, setProfileId] = useState(null);
   const [pasteUrl, setPasteUrl] = useState("");
   const [parsing, setParsing] = useState(false);
   const [parseResult, setParseResult] = useState(null);
 
-  useEffect(() => {
-    if (!user) return;
-    // Get profile id first
-    supabase.from("profiles").select("id").eq("user_id", user.id).single().then(({ data }) => {
-      if (data) {
-        setProfileId(data.id);
-        fetchProfileMatches(data.id).then(({ data: m }) => {
-          setMatches(m || []);
-          setLoading(false);
-        });
-      } else {
-        setLoading(false);
-      }
-    });
-  }, [user]);
+  // Score a job against the user's profile
+  const scoreJob = (job) => {
+    let score = 0;
+    const title = (job.title || "").toLowerCase();
+    const desc = (job.description || "").toLowerCase();
+    const loc = (job.location || "").toLowerCase();
+    const track = (profile?.target_track || "").toLowerCase();
+    const skills = (profile?.skills || []).map(s => s.toLowerCase());
+    const targetLocs = (profile?.locations || []).map(l => l.toLowerCase());
+    const keywords = (profile?.keywords_include || []).map(k => k.toLowerCase());
+    const excludes = (profile?.keywords_exclude || []).map(k => k.toLowerCase());
+    const blacklist = (profile?.company_blacklist || []).map(c => c.toLowerCase());
 
-  const handleStatusChange = async (matchId, status) => {
-    await updateMatchStatus(matchId, status);
-    setMatches(prev => prev.map(m => m.id === matchId ? { ...m, status } : m));
+    // Exclude blacklisted companies
+    if (blacklist.some(b => (job.company || "").toLowerCase().includes(b))) return -1;
+    // Exclude by keywords
+    if (excludes.some(k => title.includes(k) || desc.includes(k))) return -1;
+
+    // Track match
+    const trackMap = { ib: ["investment bank", "m&a", "capital markets", "advisory"], pe: ["private equity", "buyout", "portfolio"], vc: ["venture capital", "startup", "seed"], mc: ["consulting", "strategy", "mckinsey", "bain", "bcg"], tech: ["software", "engineer", "developer", "product"] };
+    if (track && trackMap[track]) { if (trackMap[track].some(t => title.includes(t) || desc.includes(t))) score += 30; }
+
+    // Skill match
+    skills.forEach(s => { if (title.includes(s) || desc.includes(s)) score += 10; });
+    // Location match
+    if (targetLocs.length > 0 && targetLocs.some(l => loc.includes(l))) score += 15;
+    // Keyword match
+    keywords.forEach(k => { if (title.includes(k) || desc.includes(k)) score += 12; });
+    // Experience level
+    const expLevel = (profile?.experience_level || "").toLowerCase();
+    if (expLevel === "entry" && (title.includes("analyst") || title.includes("junior") || title.includes("graduate"))) score += 10;
+    if (expLevel === "experienced" && (title.includes("associate") || title.includes("senior") || title.includes("vp"))) score += 10;
+    // Recency bonus
+    if (job.posted_date) {
+      const days = (Date.now() - new Date(job.posted_date).getTime()) / 86400000;
+      if (days < 3) score += 10;
+      else if (days < 7) score += 5;
+    }
+    return score;
   };
+
+  useEffect(() => {
+    // Fetch from Scout DB and score locally
+    const fetchAndScore = async () => {
+      try {
+        const resp = await fetch(`${SCOUT_SUPABASE_URL}/rest/v1/scraped_jobs?order=scraped_at.desc&limit=200`, {
+          headers: { apikey: SCOUT_SUPABASE_KEY, Authorization: `Bearer ${SCOUT_SUPABASE_KEY}` },
+        });
+        const data = await resp.json();
+        if (!Array.isArray(data)) { setLoading(false); return; }
+        const scored = data.map(j => ({ ...j, matchScore: scoreJob(j) }))
+          .filter(j => j.matchScore > 0)
+          .sort((a, b) => b.matchScore - a.matchScore)
+          .slice(0, 50);
+        setMatches(scored);
+      } catch (err) { console.error("Failed to fetch recommendations:", err); }
+      setLoading(false);
+    };
+    fetchAndScore();
+  }, [profile]);
+
+  const [savedIds, setSavedIds] = useState(new Set());
 
   const handlePasteUrl = async () => {
     if (!pasteUrl.trim()) return;
     setParsing(true);
     setParseResult(null);
     try {
-      const { data, error } = await supabase.functions.invoke("crawl-and-match", {
-        body: { paste_url: pasteUrl },
-      });
-      if (error) throw new Error(error.message);
-      setParseResult(data?.job || null);
+      const res = await callClaude(`Parse this job listing URL and extract: title, company, location, description, salary, type. URL: ${pasteUrl}\n\nRespond with JSON only: {"title":"...","company":"...","location":"...","description":"...","salary":"...","type":"..."}`);
+      const parsed = JSON.parse(res.replace(/```json?\n?/g,"").replace(/```/g,"").trim());
+      setParseResult(parsed);
     } catch (err) {
-      setParseResult({ error: err.message });
+      setParseResult({ error: "Could not parse that URL. Try pasting the job description instead." });
     }
     setParsing(false);
   };
 
   const saveJob = async (job) => {
     if (!user) return;
-    const { data } = await upsertJob(user.id, {
-      title: job.title, firm: job.company || job.firm, stage: "saved",
-      url: job.apply_url || job.source_job_url, description: job.description,
-      location: job.location, tags: job.tags || [], source: "Recommended",
-    });
-    if (data) setJobs(prev => [{ id: data.id, title: data.title, firm: data.firm, stage: data.stage, deadline: data.deadline || "", tags: data.tags || [], match: data.match_score || 0, track: data.track, level: data.experience_level, location: data.location, url: data.url, source: "Recommended" }, ...prev]);
+    const newJob = {
+      title: job.title, firm: job.company, stage: "saved",
+      url: job.url || job.source_url || "", description: job.description || "",
+      location: job.location || "", tags: [job.mode || "recommended"], source: "Recommended",
+    };
+    await upsertJob(newJob);
+    setSavedIds(prev => new Set([...prev, job.id]));
   };
 
   return (
     <div className="page">
       <div className="section-header">
-        <div><div className="eyebrow">For You</div><div className="section-title">Recommended Jobs</div></div>
+        <div>
+          <div className="eyebrow">For You</div>
+          <div className="section-title">Recommended Jobs</div>
+          <div className="fs12 t-ink3 mt4">Matched against your profile: track, skills, location, and preferences</div>
+        </div>
       </div>
 
-      {/* Paste URL fallback */}
+      {/* Paste URL */}
       <div className="card-flat mb16">
         <div className="flex items-c g12">
           <span style={{fontSize:12,fontWeight:500,color:"var(--ink3)"}}>📎 Paste a job URL:</span>
@@ -5503,48 +5608,37 @@ function RecommendedJobs({ jobs, setJobs, profile }) {
           <div style={{fontSize:40,marginBottom:14}}>🎯</div>
           <div style={{fontFamily:"Cormorant Garamond,serif",fontSize:20,fontWeight:700,color:"var(--ink)",marginBottom:8}}>No Recommendations Yet</div>
           <div className="fs13 t-ink3" style={{maxWidth:400,margin:"0 auto",lineHeight:1.7}}>
-            Once the admin runs the job crawler, matching jobs will appear here based on your profile skills, location, track, and preferences.
+            Fill out your profile (track, skills, locations, keywords) to get personalised job matches from our scraped job feed.
           </div>
         </div>
       ) : (
         <div>
-          <div className="alert a-gold mb16">🎯 {matches.filter(m => m.status === "new").length} new matches based on your profile. Score threshold is configurable by admin.</div>
+          <div className="alert a-gold mb16">🎯 {matches.length} jobs matched your profile. Higher scores = better fit.</div>
           <div className="grid g-auto">
-            {matches.filter(m => m.status !== "dismissed").map(match => {
-              const job = match.jobs;
-              if (!job) return null;
-              return (
-                <div key={match.id} className={`job-card ${match.status === "saved" ? "saved" : ""}`}>
-                  <div className="jc-match">{match.match_score}%</div>
-                  <div className="jc-title">{job.title}</div>
-                  <div className="jc-firm">{job.firm} · {job.location || "Remote"}</div>
-                  <div className="jc-tags">
-                    {(job.tags || []).map(t => <span key={t} className="tag t-navy">{t}</span>)}
-                    {match.status === "new" && <span className="tag t-green">New</span>}
-                  </div>
-                  {/* Match reasons */}
-                  <div style={{marginBottom:10}}>
-                    {(match.match_reasons || []).map((r, i) => (
-                      <div key={i} className="mono fs11" style={{color:"var(--green)",marginBottom:2}}>✓ {r}</div>
-                    ))}
-                  </div>
-                  <div className="jc-foot">
-                    <div className="jc-source">{job.source || "Crawler"} · ⏰ {job.deadline || "Rolling"}</div>
-                    <div className="flex g8">
-                      {job.url && <a href={job.url} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-xs" style={{textDecoration:"none"}}>Apply →</a>}
-                      {match.status === "saved" ? (
-                        <span className="tag t-green">✓ Saved</span>
-                      ) : (
-                        <>
-                          <button className="btn btn-primary btn-xs" onClick={() => { saveJob(job); handleStatusChange(match.id, "saved"); }}>+ Save</button>
-                          <button className="btn btn-ghost btn-xs" onClick={() => handleStatusChange(match.id, "dismissed")} style={{color:"var(--red)"}}>✕</button>
-                        </>
-                      )}
-                    </div>
+            {matches.map(job => (
+              <div key={job.id} className={`job-card ${savedIds.has(job.id) ? "saved" : ""}`}>
+                <div className="jc-match">{job.matchScore}</div>
+                <div className="jc-title">{job.title}</div>
+                <div className="jc-firm">{job.company} · {job.location || "Remote"}</div>
+                <div className="jc-tags">
+                  {job.mode && <span className="tag t-navy">{job.mode.toUpperCase()}</span>}
+                  {job.salary && <span className="tag t-green">{job.salary}</span>}
+                  {job.type && <span className="tag t-blue">{job.type}</span>}
+                </div>
+                {job.description && <div className="fs11 t-ink3 mb8" style={{lineHeight:1.5,maxHeight:60,overflow:"hidden"}}>{job.description.slice(0, 150)}...</div>}
+                <div className="jc-foot">
+                  <div className="jc-source">Scout · {job.posted_date ? new Date(job.posted_date).toLocaleDateString() : "Recent"}</div>
+                  <div className="flex g8">
+                    {job.url && <a href={job.url} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-xs" style={{textDecoration:"none"}}>Apply →</a>}
+                    {savedIds.has(job.id) ? (
+                      <span className="tag t-green">✓ Saved</span>
+                    ) : (
+                      <button className="btn btn-primary btn-xs" onClick={() => saveJob(job)}>+ Save</button>
+                    )}
                   </div>
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -5553,12 +5647,339 @@ function RecommendedJobs({ jobs, setJobs, profile }) {
 }
 
 
+/* ════════════════════════════════════════════════════════════════════════════
+   PAGE: SALARY INSIGHTS
+══════════════════════════════════════════════════════════════════════════════ */
+function SalaryInsights() {
+  const [track, setTrack] = useState("ib");
+  const [level, setLevel] = useState("analyst");
+  const [location, setLocation] = useState("london");
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
+
+  const TRACKS = {ib:"Investment Banking",pe:"Private Equity",vc:"Venture Capital",mc:"Management Consulting",am:"Asset Management",tech:"Tech",trading:"Sales & Trading"};
+  const LEVELS = {analyst:"Analyst",associate:"Associate",vp:"VP",director:"Director / Principal",md:"MD / Partner"};
+  const LOCATIONS = {london:"London",nyc:"New York",chicago:"Chicago",hk:"Hong Kong",singapore:"Singapore",sf:"San Francisco"};
+
+  const fetchSalaries = async () => {
+    setLoading(true); setSearched(true);
+    try {
+      const prompt = `Give salary data for a ${LEVELS[level]} in ${TRACKS[track]} in ${LOCATIONS[location]}. Return JSON only:\n{"base":number,"bonus_low":number,"bonus_high":number,"total_low":number,"total_high":number,"currency":"GBP or USD","notes":"brief note on typical progression","comparable_roles":[{"role":"...","total":"..."}]}\nUse real market data for 2025/2026. Numbers should be annual.`;
+      const result = await callClaude(prompt);
+      const parsed = JSON.parse(result.replace(/```json?\n?/g,"").replace(/```/g,"").trim());
+      setData(parsed);
+    } catch { setData(null); }
+    setLoading(false);
+  };
+
+  const fmt = (n, curr="£") => n ? `${curr}${(n/1000).toFixed(0)}k` : "—";
+
+  return (
+    <div className="page">
+      <div className="section-header"><div><div className="eyebrow">Research</div><div className="section-title">Salary Insights</div></div></div>
+      <div className="card-flat mb16">
+        <div className="flex g12 items-end" style={{flexWrap:"wrap"}}>
+          <div><div className="fs11 t-ink3 mb4">Track</div><select className="input" value={track} onChange={e=>setTrack(e.target.value)} style={{width:180}}>{Object.entries(TRACKS).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></div>
+          <div><div className="fs11 t-ink3 mb4">Level</div><select className="input" value={level} onChange={e=>setLevel(e.target.value)} style={{width:160}}>{Object.entries(LEVELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></div>
+          <div><div className="fs11 t-ink3 mb4">Location</div><select className="input" value={location} onChange={e=>setLocation(e.target.value)} style={{width:160}}>{Object.entries(LOCATIONS).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></div>
+          <button className="btn btn-primary" onClick={fetchSalaries} disabled={loading}>{loading?"⏳ Fetching...":"Get Salary Data"}</button>
+        </div>
+      </div>
+      {searched && !loading && data && (
+        <div className="grid g3">
+          <div className="card"><div className="fs11 t-ink3 mb4">Base Salary</div><div className="fw7 fs20" style={{color:"var(--ink)"}}>{fmt(data.base,data.currency==="USD"?"$":"£")}</div></div>
+          <div className="card"><div className="fs11 t-ink3 mb4">Bonus Range</div><div className="fw7 fs20" style={{color:"var(--green)"}}>{fmt(data.bonus_low,data.currency==="USD"?"$":"£")} – {fmt(data.bonus_high,data.currency==="USD"?"$":"£")}</div></div>
+          <div className="card"><div className="fs11 t-ink3 mb4">Total Comp</div><div className="fw7 fs20" style={{color:"var(--gold)"}}>{fmt(data.total_low,data.currency==="USD"?"$":"£")} – {fmt(data.total_high,data.currency==="USD"?"$":"£")}</div></div>
+          {data.notes && <div className="card" style={{gridColumn:"1/-1"}}><div className="fs12 t-ink2" style={{lineHeight:1.7}}>{data.notes}</div></div>}
+          {data.comparable_roles?.length > 0 && (
+            <div className="card" style={{gridColumn:"1/-1"}}>
+              <div className="fs12 fw6 mb8">Comparable Roles</div>
+              <table className="data-table" style={{width:"100%"}}><thead><tr><th>Role</th><th>Total Comp</th></tr></thead>
+                <tbody>{data.comparable_roles.map((r,i)=><tr key={i}><td className="fs12">{r.role}</td><td className="fs12 fw6">{r.total}</td></tr>)}</tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+      {searched && !loading && !data && <div className="alert a-red">Could not fetch salary data. Try again.</div>}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   PAGE: COMPANY RESEARCH
+══════════════════════════════════════════════════════════════════════════════ */
+function CompanyResearch() {
+  const [query, setQuery] = useState("");
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [history, setHistory] = useState(() => { try { return JSON.parse(localStorage.getItem("jobos-research-history")||"[]"); } catch { return []; } });
+
+  useEffect(() => { localStorage.setItem("jobos-research-history", JSON.stringify(history.slice(0,20))); }, [history]);
+
+  const research = async (q) => {
+    const name = q || query.trim();
+    if (!name) return;
+    setLoading(true);
+    try {
+      const prompt = `Research the company "${name}" for a job applicant. Return JSON only:\n{"name":"...","industry":"...","hq":"...","size":"employee count range","founded":"year","revenue":"...","culture":"2-3 sentence summary","glassdoor_rating":"X.X/5 estimate","interview_difficulty":"Easy/Medium/Hard","avg_interview_process":"description","top_competitors":["..."],"recent_news":"1-2 recent developments","hiring_for":["common roles"],"pros":["..."],"cons":["..."],"tips":"interview/application tip"}\nUse real publicly available info. Be honest about what you know vs estimate.`;
+      const res = await callClaude(prompt);
+      const parsed = JSON.parse(res.replace(/```json?\n?/g,"").replace(/```/g,"").trim());
+      setResult(parsed);
+      setHistory(prev => [{ name: parsed.name || name, time: new Date().toISOString() }, ...prev.filter(h => h.name.toLowerCase() !== name.toLowerCase())]);
+    } catch { setResult(null); }
+    setLoading(false);
+  };
+
+  return (
+    <div className="page">
+      <div className="section-header"><div><div className="eyebrow">Research</div><div className="section-title">Company Research</div></div></div>
+      <div className="card-flat mb16">
+        <div className="flex g12 items-c">
+          <input className="input flex-1" placeholder="Enter company name (e.g. Goldman Sachs, McKinsey, Stripe)..." value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>e.key==="Enter"&&research()} />
+          <button className="btn btn-primary" onClick={()=>research()} disabled={loading}>{loading?"⏳ Researching...":"Research"}</button>
+        </div>
+        {history.length > 0 && (
+          <div className="flex g8 mt8" style={{flexWrap:"wrap"}}>
+            <span className="fs11 t-ink3">Recent:</span>
+            {history.slice(0,8).map(h=><button key={h.name} className="tag t-navy" style={{cursor:"pointer"}} onClick={()=>{setQuery(h.name);research(h.name);}}>{h.name}</button>)}
+          </div>
+        )}
+      </div>
+      {result && (
+        <div className="grid g3">
+          <div className="card"><div className="fs11 t-ink3 mb4">Company</div><div className="fw7 fs16">{result.name}</div><div className="fs11 t-ink3">{result.industry} · {result.hq}</div></div>
+          <div className="card"><div className="fs11 t-ink3 mb4">Size & Revenue</div><div className="fw6 fs14">{result.size}</div><div className="fs11 t-ink3">{result.revenue || "—"}</div></div>
+          <div className="card"><div className="fs11 t-ink3 mb4">Rating</div><div className="fw7 fs16" style={{color:"var(--gold)"}}>{result.glassdoor_rating}</div><div className="fs11 t-ink3">Est. Glassdoor</div></div>
+          <div className="card" style={{gridColumn:"1/-1"}}><div className="fs12 fw6 mb8">Culture</div><div className="fs12 t-ink2" style={{lineHeight:1.7}}>{result.culture}</div></div>
+          <div className="card"><div className="fs12 fw6 mb8">Pros</div>{(result.pros||[]).map((p,i)=><div key={i} className="fs12 t-ink2 mb4" style={{display:"flex",gap:6}}>✓ {p}</div>)}</div>
+          <div className="card"><div className="fs12 fw6 mb8">Cons</div>{(result.cons||[]).map((c,i)=><div key={i} className="fs12 t-ink2 mb4" style={{display:"flex",gap:6}}>✗ {c}</div>)}</div>
+          <div className="card"><div className="fs12 fw6 mb8">Interview</div><div className="fs12 t-ink2 mb4">Difficulty: <span className="fw6">{result.interview_difficulty}</span></div><div className="fs12 t-ink3">{result.avg_interview_process}</div></div>
+          {result.recent_news && <div className="card" style={{gridColumn:"1/-1"}}><div className="fs12 fw6 mb8">Recent News</div><div className="fs12 t-ink2" style={{lineHeight:1.7}}>{result.recent_news}</div></div>}
+          {result.tips && <div className="card" style={{gridColumn:"1/-1",borderLeft:"3px solid var(--gold)"}}><div className="fs12 fw6 mb4">💡 Application Tip</div><div className="fs12 t-ink2" style={{lineHeight:1.7}}>{result.tips}</div></div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   PAGE: SKILLS GAP ANALYSIS
+══════════════════════════════════════════════════════════════════════════════ */
+function SkillsGap() {
+  const { user } = useAuth();
+  const [cv, setCv] = useState("");
+  const [jobDesc, setJobDesc] = useState("");
+  const [analysis, setAnalysis] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    supabase.from('profiles').select('cv_text').eq('user_id', user.id).single().then(({data})=>{
+      if (data?.cv_text) setCv(data.cv_text);
+    });
+  }, [user]);
+
+  const analyze = async () => {
+    if (!cv || !jobDesc) return;
+    setLoading(true);
+    try {
+      const prompt = `Compare this CV against this job description and identify skills gaps. Return JSON only:\n{"match_score":0-100,"matching_skills":[{"skill":"...","evidence":"where in CV"}],"missing_skills":[{"skill":"...","importance":"Critical/Important/Nice-to-have","learning_resource":"specific course or resource name","time_to_learn":"e.g. 2 weeks"}],"recommendations":["specific actionable advice"],"cv_improvements":["specific things to add/change in CV"]}\n\nCV:\n${cv.slice(0,4000)}\n\nJOB DESCRIPTION:\n${jobDesc.slice(0,3000)}`;
+      const res = await callClaude(prompt);
+      const parsed = JSON.parse(res.replace(/```json?\n?/g,"").replace(/```/g,"").trim());
+      setAnalysis(parsed);
+    } catch { setAnalysis(null); }
+    setLoading(false);
+  };
+
+  return (
+    <div className="page">
+      <div className="section-header"><div><div className="eyebrow">Prepare</div><div className="section-title">Skills Gap Analysis</div></div></div>
+      <div className="grid" style={{gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div className="card"><div className="fs12 fw6 mb8">Your CV {cv?"✅":"⚠️"}</div><textarea className="input" rows={6} value={cv} onChange={e=>setCv(e.target.value)} placeholder="Paste your CV or it auto-loads from your profile..." style={{fontSize:11,lineHeight:1.6}}/></div>
+        <div className="card"><div className="fs12 fw6 mb8">Target Job Description</div><textarea className="input" rows={6} value={jobDesc} onChange={e=>setJobDesc(e.target.value)} placeholder="Paste the job description you want to compare against..." style={{fontSize:11,lineHeight:1.6}}/></div>
+      </div>
+      <button className="btn btn-primary mt12" onClick={analyze} disabled={loading||!cv||!jobDesc}>{loading?"⏳ Analyzing...":"Analyze Skills Gap"}</button>
+      {analysis && (
+        <div className="mt16">
+          <div className="card mb12"><div className="flex items-c g12"><div className="fw7 fs24" style={{color:analysis.match_score>=70?"var(--green)":analysis.match_score>=40?"var(--gold)":"var(--red)"}}>{analysis.match_score}%</div><div className="fs13 t-ink2">Match Score</div></div></div>
+          <div className="grid g3">
+            <div className="card"><div className="fs12 fw6 mb8" style={{color:"var(--green)"}}>✓ Matching Skills ({(analysis.matching_skills||[]).length})</div>
+              {(analysis.matching_skills||[]).map((s,i)=><div key={i} className="fs12 mb6"><span className="fw5">{s.skill}</span><div className="fs11 t-ink3">{s.evidence}</div></div>)}
+            </div>
+            <div className="card"><div className="fs12 fw6 mb8" style={{color:"var(--red)"}}>✗ Missing Skills ({(analysis.missing_skills||[]).length})</div>
+              {(analysis.missing_skills||[]).map((s,i)=><div key={i} className="fs12 mb8"><span className="fw5">{s.skill}</span> <span className={"tag "+(s.importance==="Critical"?"t-red":s.importance==="Important"?"t-gold":"t-blue")}>{s.importance}</span><div className="fs11 t-ink3 mt2">📚 {s.learning_resource} · ⏱ {s.time_to_learn}</div></div>)}
+            </div>
+            <div className="card"><div className="fs12 fw6 mb8">📝 CV Improvements</div>
+              {(analysis.cv_improvements||[]).map((r,i)=><div key={i} className="fs12 t-ink2 mb6" style={{lineHeight:1.6}}>• {r}</div>)}
+            </div>
+          </div>
+          {(analysis.recommendations||[]).length>0 && <div className="card mt12" style={{borderLeft:"3px solid var(--gold)"}}><div className="fs12 fw6 mb8">💡 Recommendations</div>{analysis.recommendations.map((r,i)=><div key={i} className="fs12 t-ink2 mb4" style={{lineHeight:1.6}}>→ {r}</div>)}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   PAGE: NETWORKING TRACKER
+══════════════════════════════════════════════════════════════════════════════ */
+function Networking() {
+  const [contacts, setContacts] = useState(() => { try { return JSON.parse(localStorage.getItem("jobos-networking")||"[]"); } catch { return []; } });
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({name:"",company:"",role:"",channel:"Coffee Chat",status:"scheduled",date:new Date().toISOString().split("T")[0],notes:"",followUp:""});
+  const CHANNELS = ["Coffee Chat","LinkedIn","Email","Phone","Referral","Event","Cold Outreach"];
+  const STATUSES = ["scheduled","completed","follow-up needed","no response","connected"];
+
+  useEffect(()=>{ localStorage.setItem("jobos-networking", JSON.stringify(contacts)); }, [contacts]);
+
+  const add = () => {
+    if (!form.name) return;
+    setContacts(prev=>[{...form,id:Date.now(),...form},...prev]);
+    setForm({name:"",company:"",role:"",channel:"Coffee Chat",status:"scheduled",date:new Date().toISOString().split("T")[0],notes:"",followUp:""});
+    setShowForm(false);
+  };
+
+  const remove = (id) => setContacts(prev=>prev.filter(c=>c.id!==id));
+  const updateStatus = (id, status) => setContacts(prev=>prev.map(c=>c.id===id?{...c,status}:c));
+
+  const statusColor = {scheduled:"t-blue",completed:"t-green","follow-up needed":"t-gold","no response":"t-red",connected:"t-green"};
+
+  return (
+    <div className="page">
+      <div className="section-header">
+        <div><div className="eyebrow">Network</div><div className="section-title">Networking Tracker</div></div>
+        <button className="btn btn-primary" onClick={()=>setShowForm(!showForm)}>+ Add Contact</button>
+      </div>
+      {showForm && (
+        <div className="card mb16">
+          <div className="grid g3">
+            <div><div className="fs11 t-ink3 mb4">Name *</div><input className="input" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}/></div>
+            <div><div className="fs11 t-ink3 mb4">Company</div><input className="input" value={form.company} onChange={e=>setForm(f=>({...f,company:e.target.value}))}/></div>
+            <div><div className="fs11 t-ink3 mb4">Role</div><input className="input" value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))}/></div>
+            <div><div className="fs11 t-ink3 mb4">Channel</div><select className="input" value={form.channel} onChange={e=>setForm(f=>({...f,channel:e.target.value}))}>{CHANNELS.map(c=><option key={c}>{c}</option>)}</select></div>
+            <div><div className="fs11 t-ink3 mb4">Date</div><input className="input" type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}/></div>
+            <div><div className="fs11 t-ink3 mb4">Status</div><select className="input" value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}>{STATUSES.map(s=><option key={s}>{s}</option>)}</select></div>
+            <div style={{gridColumn:"1/-1"}}><div className="fs11 t-ink3 mb4">Notes</div><textarea className="input" rows={2} value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} placeholder="Key takeaways, topics discussed..."/></div>
+            <div style={{gridColumn:"1/-1"}}><div className="fs11 t-ink3 mb4">Follow-up Action</div><input className="input" value={form.followUp} onChange={e=>setForm(f=>({...f,followUp:e.target.value}))} placeholder="e.g. Send thank you email, connect on LinkedIn..."/></div>
+          </div>
+          <div className="flex g8 mt12"><button className="btn btn-primary" onClick={add}>Save</button><button className="btn btn-outline" onClick={()=>setShowForm(false)}>Cancel</button></div>
+        </div>
+      )}
+      {/* Stats */}
+      <div className="grid g3 mb16">
+        <div className="card-tinted"><div className="fs11 t-ink3 mb4">Total Contacts</div><div className="fw7 fs20">{contacts.length}</div></div>
+        <div className="card-tinted"><div className="fs11 t-ink3 mb4">Follow-ups Needed</div><div className="fw7 fs20" style={{color:"var(--gold)"}}>{contacts.filter(c=>c.status==="follow-up needed").length}</div></div>
+        <div className="card-tinted"><div className="fs11 t-ink3 mb4">Connected</div><div className="fw7 fs20" style={{color:"var(--green)"}}>{contacts.filter(c=>c.status==="connected").length}</div></div>
+      </div>
+      {contacts.length===0 ? (
+        <div className="card-tinted" style={{textAlign:"center",padding:48}}><div style={{fontSize:40,marginBottom:12}}>🤝</div><div className="fw6 fs14">No networking contacts yet</div><div className="fs12 t-ink3 mt4">Track your coffee chats, referrals, and professional connections.</div></div>
+      ) : (
+        <div className="grid g-auto">
+          {contacts.map(c=>(
+            <div key={c.id} className="card">
+              <div className="flex items-c g8 mb8"><div className="fw6 fs14">{c.name}</div><span className={`tag ${statusColor[c.status]||"t-blue"}`}>{c.status}</span></div>
+              {c.company && <div className="fs12 t-ink2 mb2">{c.company}{c.role?` · ${c.role}`:""}</div>}
+              <div className="fs11 t-ink3 mb4">{c.channel} · {c.date}</div>
+              {c.notes && <div className="fs12 t-ink3 mb4" style={{lineHeight:1.6}}>{c.notes}</div>}
+              {c.followUp && <div className="fs12 mb4" style={{color:"var(--gold)"}}>→ {c.followUp}</div>}
+              <div className="flex g4 mt8">
+                <select className="input" value={c.status} onChange={e=>updateStatus(c.id,e.target.value)} style={{fontSize:11,padding:"4px 8px"}}>{STATUSES.map(s=><option key={s}>{s}</option>)}</select>
+                <button className="btn btn-ghost btn-xs" onClick={()=>remove(c.id)} style={{color:"var(--red)"}}>✕</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   PAGE: JOB ALERTS
+══════════════════════════════════════════════════════════════════════════════ */
+function JobAlerts() {
+  const [alerts, setAlerts] = useState(() => { try { return JSON.parse(localStorage.getItem("jobos-alerts")||"[]"); } catch { return []; } });
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({name:"",keywords:"",track:"",location:"",minSalary:"",frequency:"daily"});
+  const [matches, setMatches] = useState({});
+
+  useEffect(()=>{ localStorage.setItem("jobos-alerts", JSON.stringify(alerts)); }, [alerts]);
+
+  // Check alerts against Scout DB
+  useEffect(() => {
+    if (alerts.length === 0) return;
+    fetch(`${SCOUT_SUPABASE_URL}/rest/v1/scraped_jobs?order=scraped_at.desc&limit=200`, {
+      headers: { apikey: SCOUT_SUPABASE_KEY, Authorization: `Bearer ${SCOUT_SUPABASE_KEY}` },
+    }).then(r=>r.json()).then(jobs => {
+      if (!Array.isArray(jobs)) return;
+      const m = {};
+      alerts.forEach(a => {
+        const kws = (a.keywords||"").toLowerCase().split(",").map(k=>k.trim()).filter(Boolean);
+        const matched = jobs.filter(j => {
+          const text = `${j.title} ${j.description} ${j.company}`.toLowerCase();
+          if (kws.length > 0 && !kws.some(k => text.includes(k))) return false;
+          if (a.track && j.mode !== a.track) return false;
+          if (a.location && !(j.location||"").toLowerCase().includes(a.location.toLowerCase())) return false;
+          return true;
+        });
+        m[a.id] = matched.length;
+      });
+      setMatches(m);
+    }).catch(()=>{});
+  }, [alerts]);
+
+  const add = () => {
+    if (!form.name) return;
+    setAlerts(prev=>[{...form,id:Date.now(),createdAt:new Date().toISOString()},...prev]);
+    setForm({name:"",keywords:"",track:"",location:"",minSalary:"",frequency:"daily"});
+    setShowForm(false);
+  };
+  const remove = (id) => setAlerts(prev=>prev.filter(a=>a.id!==id));
+
+  return (
+    <div className="page">
+      <div className="section-header">
+        <div><div className="eyebrow">Alerts</div><div className="section-title">Job Alerts</div></div>
+        <button className="btn btn-primary" onClick={()=>setShowForm(!showForm)}>+ New Alert</button>
+      </div>
+      {showForm && (
+        <div className="card mb16">
+          <div className="grid g3">
+            <div><div className="fs11 t-ink3 mb4">Alert Name *</div><input className="input" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. IB Analyst London"/></div>
+            <div><div className="fs11 t-ink3 mb4">Keywords (comma-sep)</div><input className="input" value={form.keywords} onChange={e=>setForm(f=>({...f,keywords:e.target.value}))} placeholder="e.g. analyst, M&A, capital markets"/></div>
+            <div><div className="fs11 t-ink3 mb4">Track</div><select className="input" value={form.track} onChange={e=>setForm(f=>({...f,track:e.target.value}))}><option value="">Any</option><option value="ib">IB</option><option value="pe">PE</option><option value="vc">VC</option><option value="mc">MC</option><option value="tech">Tech</option><option value="im">IM</option></select></div>
+            <div><div className="fs11 t-ink3 mb4">Location</div><input className="input" value={form.location} onChange={e=>setForm(f=>({...f,location:e.target.value}))} placeholder="e.g. London"/></div>
+          </div>
+          <div className="flex g8 mt12"><button className="btn btn-primary" onClick={add}>Create Alert</button><button className="btn btn-outline" onClick={()=>setShowForm(false)}>Cancel</button></div>
+        </div>
+      )}
+      {alerts.length===0 ? (
+        <div className="card-tinted" style={{textAlign:"center",padding:48}}><div style={{fontSize:40,marginBottom:12}}>🔔</div><div className="fw6 fs14">No job alerts set</div><div className="fs12 t-ink3 mt4">Create alerts to get notified when matching jobs appear in the Scout feed.</div></div>
+      ) : (
+        <div className="grid g-auto">
+          {alerts.map(a=>(
+            <div key={a.id} className="card">
+              <div className="flex items-c g8 mb8"><div className="fw6 fs14">{a.name}</div>{matches[a.id]>0 && <span className="tag t-green">{matches[a.id]} matches</span>}</div>
+              {a.keywords && <div className="fs12 t-ink2 mb4">Keywords: {a.keywords}</div>}
+              <div className="fs11 t-ink3">{a.track?`Track: ${a.track.toUpperCase()} · `:""}{a.location?`Location: ${a.location}`:""}</div>
+              <div className="flex g4 mt8"><button className="btn btn-ghost btn-xs" onClick={()=>remove(a.id)} style={{color:"var(--red)"}}>Delete</button></div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const PAGE_TITLES = {
   dashboard:"Dashboard", recommended:"Recommended Jobs", jobs:"Job Board",
   websites:"Website Manager", pipeline:"CRM", playbooks:"Playbooks",
   cv:"CV + Cover Letters", interview:"Interview Prep",
   extension:"Auto Apply", profile:"My Profile", admin:"Admin Console",
-  scout:"Job Scout",
+  scout:"Jobs", salaries:"Salary Insights", research:"Company Research",
+  skills:"Skills Gap", networking:"Networking", alerts:"Job Alerts",
 };
 
 /* ════════════════════════════════════════════════════════════════════════════
@@ -5734,12 +6155,33 @@ function JobScout({ jobs: existingJobs, setJobs: setExistingJobs, profile }) {
   );
 }
 
+const ADMIN_PASSWORD = "jobos2026";
+
 export default function JobSearchOS() {
   const { user, profile: authProfile, signOut } = useAuth();
   const [page, setPage] = useState("dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [jobs, setJobs] = useState([]);
   const [dbLoaded, setDbLoaded] = useState(false);
+  const [adminAuthed, setAdminAuthed] = useState(() => sessionStorage.getItem("jobos-admin") === "1");
+
+  // Ctrl+Shift+A opens admin
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.ctrlKey && e.shiftKey && e.key === "A") {
+        e.preventDefault();
+        if (adminAuthed) { setPage("admin"); return; }
+        const pw = prompt("Admin password:");
+        if (pw === ADMIN_PASSWORD) {
+          sessionStorage.setItem("jobos-admin", "1");
+          setAdminAuthed(true);
+          setPage("admin");
+        }
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [adminAuthed]);
 
   const profile = {
     name: authProfile?.display_name || user?.email?.split("@")[0] || "User",
@@ -5796,14 +6238,44 @@ export default function JobSearchOS() {
       case "recommended":  return <RecommendedJobs jobs={jobs} setJobs={setJobsWithDb} profile={profile}/>;
       case "scout":        return <JobScout jobs={jobs} setJobs={setJobs} profile={profile}/>;
       case "jobs":         return <JobBoard jobs={jobs} setJobs={setJobsWithDb} profile={profile}/>;
-      case "websites":     return <WebsiteManager/>;
+
       case "pipeline":     return <Pipeline jobs={jobs} setJobs={setJobsWithDb}/>;
+      case "salaries":     return <SalaryInsights/>;
+      case "research":     return <CompanyResearch/>;
+      case "skills":       return <SkillsGap/>;
+      case "networking":   return <Networking/>;
+      case "alerts":       return <JobAlerts/>;
       case "playbooks":    return <Playbooks/>;
       case "cv":           return <CVStudio jobs={jobs}/>;
       case "interview":    return <Interview/>;
-      case "extension":    return <Extension/>;
+      case "extension":    return (
+        <div className="page" style={{textAlign:"center",paddingTop:80}}>
+          <div style={{fontSize:64,marginBottom:16}}>🚀</div>
+          <div style={{fontFamily:"Cormorant Garamond,serif",fontSize:28,fontWeight:700,color:"var(--ink)",marginBottom:12}}>Auto Apply</div>
+          <div style={{fontSize:15,color:"var(--ink2)",maxWidth:420,margin:"0 auto",lineHeight:1.7,marginBottom:24}}>
+            Automatically apply to hundreds of jobs with AI-personalised cover letters, smart form filling, and follow-up sequences.
+          </div>
+          <div style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 24px",borderRadius:8,background:"var(--gold)",color:"var(--ink-inv)",fontWeight:600,fontSize:14}}>
+            Coming Soon
+          </div>
+          <div style={{marginTop:40,display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16,maxWidth:600,margin:"40px auto 0"}}>
+            {[
+              {icon:"📝",title:"Smart Form Filling",desc:"Auto-fills application forms using your profile, CV, and preferences"},
+              {icon:"✉️",title:"AI Cover Letters",desc:"Generates tailored cover letters for each job in seconds"},
+              {icon:"📊",title:"Application Tracking",desc:"Track every application status, response rates, and follow-ups"},
+            ].map(f=>(
+              <div key={f.title} style={{background:"var(--surface2)",border:"1px solid var(--border2)",borderRadius:10,padding:"20px 16px",textAlign:"left"}}>
+                <div style={{fontSize:24,marginBottom:8}}>{f.icon}</div>
+                <div className="fw6 fs13" style={{color:"var(--ink)",marginBottom:6}}>{f.title}</div>
+                <div className="fs12 t-ink3" style={{lineHeight:1.5}}>{f.desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
       case "profile":      return <MyProfile/>;
-      case "admin":        return <Admin/>;
+      case "websites":     return adminAuthed ? <WebsiteManager/> : null;
+      case "admin":        return adminAuthed ? <Admin/> : null;
       default: return (
         <div className="page">
           <div className="coming-box">

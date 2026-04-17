@@ -1695,6 +1695,19 @@ ${cvText.slice(0,5000)}`;
             <div className="fs13 t-ink3" style={{maxWidth:440,margin:"8px auto",lineHeight:1.7}}>Let's get you set up. Tell us about yourself and upload your CV — we'll do the heavy lifting from there.</div>
           </div>
           <div className="card" style={{maxWidth:560,margin:"0 auto"}}>
+            {/* Region Toggle */}
+            <div style={{display:"flex",justifyContent:"center",marginBottom:16}}>
+              <div style={{display:"flex",background:"var(--surface2)",borderRadius:8,padding:2,border:"1px solid var(--border2)"}}>
+                {[{id:"uk",label:"🇬🇧 UK",loc:"London"},{id:"us",label:"🇺🇸 US",loc:"New York"}].map(r=>(
+                  <button key={r.id} onClick={()=>{setForm(f=>({...f,location:r.loc}));localStorage.setItem("jobos-region",r.id);if(typeof setRegion==='function')window.__jobosRegion=r.id;}}
+                    className="fs12 fw6" style={{padding:"6px 16px",borderRadius:6,border:"none",cursor:"pointer",
+                    background:form.location.includes(r.id==="uk"?"London":"New York")?"var(--ink)":"transparent",
+                    color:form.location.includes(r.id==="uk"?"London":"New York")?"white":"var(--ink3)"}}>
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="fs14 fw6 mb12">About You</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
               <div style={{gridColumn:"1/-1"}}><div className="fs11 t-ink3 mb4">Your Name</div><input className="input" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="Full name"/></div>
@@ -4270,8 +4283,33 @@ function Playbooks() {
   const [deepDive, setDeepDive] = useState(null);
   const [deepDiveContent, setDeepDiveContent] = useState("");
   const [loadingDeep, setLoadingDeep] = useState(false);
+  const [roleDetail, setRoleDetail] = useState(null);
+  const [roleDetailContent, setRoleDetailContent] = useState("");
+  const [loadingRole, setLoadingRole] = useState(false);
   const pb = PLAYBOOKS[sel][level];
   const industry = PLAYBOOKS[sel];
+
+  const openRoleDetail = async (role) => {
+    setRoleDetail(role);
+    setLoadingRole(true);
+    try {
+      const prompt = `Give a comprehensive guide to the "${role.title}" role in ${industry.name}. Cover:
+1. Day-to-Day: What does a typical week look like? What are you actually doing?
+2. Key Skills: Technical skills, soft skills, and tools you need
+3. How to Get In: Common paths, background requirements, networking tips
+4. Interview Process: Typical stages, what they test for, how to prepare
+5. Career Progression: Where this role leads, typical timeline
+6. Lifestyle: Hours, travel, work-life balance, culture
+7. Exit Opportunities: Where people go after this role
+8. Pro Tips: Insider advice that most candidates don't know
+
+Be specific to ${industry.name}. Use concrete examples. Keep it practical and actionable.
+IMPORTANT: Do NOT use markdown formatting. Use plain text only with line breaks for structure.`;
+      const result = await callClaude(prompt);
+      setRoleDetailContent(result);
+    } catch { setRoleDetailContent("Failed to load. Please try again."); }
+    setLoadingRole(false);
+  };
 
   const openDeepDive = async (milestone) => {
     setDeepDive(milestone);
@@ -4297,6 +4335,37 @@ IMPORTANT: Do NOT use markdown formatting like **, ##, ###, ***, ---, or any oth
     } catch { setDeepDiveContent("Failed to load detailed content. Please try again."); }
     setLoadingDeep(false);
   };
+
+  if (roleDetail) {
+    return (
+      <div className="page">
+        <div className="section-header">
+          <div>
+            <div className="eyebrow">{industry.name}</div>
+            <div className="section-title">{roleDetail.title}</div>
+            <div className="fs12 t-ink3">{roleDetail.years} years · {roleDetail.desc}</div>
+          </div>
+          <button className="btn btn-outline" onClick={()=>{setRoleDetail(null);setRoleDetailContent("");}}>← Back to Overview</button>
+        </div>
+        {loadingRole ? (
+          <div className="ai-pulse"><div className="dot-spin"/>Generating detailed guide for "{roleDetail.title}"...</div>
+        ) : (
+          <div className="card">
+            <div style={{fontFamily:"Sora,sans-serif",fontSize:13,lineHeight:1.8,color:"var(--ink2)"}}>
+              {roleDetailContent.split('\n').map((rawLine, i) => {
+                let line = rawLine.replace(/^#{1,6}\s+/g,'').replace(/\*\*\*(.*?)\*\*\*/g,'$1').replace(/\*\*(.*?)\*\*/g,'$1').replace(/\*(.*?)\*/g,'$1').replace(/^---+$/g,'').replace(/`(.*?)`/g,'$1').trim();
+                if (!line) return <div key={i} style={{height:8}}/>;
+                const isHeader = /^\d+[\.\)]\s+[A-Z]/.test(line) || /^[A-Z][A-Za-z\s&\-:]+:?\s*$/.test(line);
+                return isHeader
+                  ? <div key={i} style={{fontWeight:700,fontSize:14,color:"var(--ink)",marginTop:16,marginBottom:6}}>{line}</div>
+                  : <div key={i} style={{marginBottom:2}}>{line.startsWith('•')||line.startsWith('-')||line.startsWith('–') ? <span style={{color:"var(--gold)",marginRight:4}}>▸</span> : null}{line.replace(/^[•\-–]\s*/,'')}</div>;
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   if (deepDive) {
     return (
@@ -4405,7 +4474,7 @@ IMPORTANT: Do NOT use markdown formatting like **, ##, ###, ***, ---, or any oth
             <div className="card-title" style={{fontFamily:"Cormorant Garamond,serif",fontSize:20}}>{PLAYBOOKS[sel].icon} Full Playbook</div>
           </div>
           <div className="flex g4">
-            {["overview","milestones","questions","templates","checklist"].map(t=>(
+            {["overview","getting the role","questions","templates","checklist"].map(t=>(
               <button key={t} className={`btn btn-sm ${tab===t?"btn-primary":"btn-outline"}`} style={{textTransform:"capitalize"}} onClick={()=>setTab(t)}>{t}</button>
             ))}
           </div>
@@ -4425,10 +4494,11 @@ IMPORTANT: Do NOT use markdown formatting like **, ##, ###, ***, ---, or any oth
                 <div className="fs13 fw6 mb10" style={{color:"var(--ink)"}}>Career Progression</div>
                 <div style={{display:"flex",flexDirection:"column",gap:8}}>
                   {industry.roles.map((r,i) => (
-                    <div key={i} style={{display:"flex",gap:12,padding:"10px 0",borderBottom:i<industry.roles.length-1?"1px solid var(--border2)":"none"}}>
+                    <div key={i} onClick={()=>openRoleDetail(r)} style={{display:"flex",gap:12,padding:"10px 0",borderBottom:i<industry.roles.length-1?"1px solid var(--border2)":"none",cursor:"pointer",borderRadius:6,transition:"background 0.1s"}}
+                      onMouseEnter={e=>e.currentTarget.style.background="var(--surface2)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                       <div style={{minWidth:28,height:28,borderRadius:8,background:"var(--gold-bg)",color:"var(--gold)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700}}>{i+1}</div>
                       <div style={{flex:1}}>
-                        <div className="fw6 fs13">{r.title} <span className="fs11 t-ink3">({r.years} yrs)</span></div>
+                        <div className="fw6 fs13">{r.title} <span className="fs11 t-ink3">({r.years} yrs)</span> <span className="fs10" style={{color:"var(--blue)"}}>→ tap for details</span></div>
                         <div className="fs12 t-ink3 mt2">{r.desc}</div>
                       </div>
                     </div>
@@ -4440,7 +4510,7 @@ IMPORTANT: Do NOT use markdown formatting like **, ##, ###, ***, ---, or any oth
             {/* Pay Ranges */}
             {industry.pay && industry.pay.length > 0 && (
               <div className="card">
-                <div className="fs13 fw6 mb10" style={{color:"var(--ink)"}}>💰 Compensation (UK, Annual)</div>
+                <div className="fs13 fw6 mb10" style={{color:"var(--ink)"}}>💰 Compensation ({localStorage.getItem("jobos-region")==="us"?"US":"UK"}, Annual)</div>
                 <div style={{overflowX:"auto"}}>
                   <table className="data-table" style={{width:"100%",fontSize:12}}>
                     <thead>
@@ -4469,7 +4539,7 @@ IMPORTANT: Do NOT use markdown formatting like **, ##, ###, ***, ---, or any oth
           </div>
         )}
 
-        {tab==="milestones" && (
+        {tab==="getting the role" && (
           <div>
             <div className="alert a-gold mb16">⚡ <span><strong>Hiring Process:</strong> {pb.process}. Click any milestone to deep-dive.</span></div>
             {pb.milestones.map((m,i)=>(
@@ -6777,6 +6847,7 @@ export default function JobSearchOS() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [jobs, setJobs] = useState([]);
   const [dbLoaded, setDbLoaded] = useState(false);
+  const [region, setRegion] = useState(() => localStorage.getItem("jobos-region") || "uk");
   const [adminAuthed, setAdminAuthed] = useState(() => sessionStorage.getItem("jobos-admin") === "1");
 
   // Ctrl+Shift+A opens admin

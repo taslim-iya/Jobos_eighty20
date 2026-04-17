@@ -1089,6 +1089,20 @@ select.input {
 const PLAYBOOKS = {
   ib: {
     icon: "🏦", name: "Investment Banking",
+    description: "Investment bankers advise corporations, governments, and institutions on raising capital (equity and debt), mergers & acquisitions, restructuring, and other strategic transactions. The work is deal-driven: long hours, steep learning curve, and unmatched exit opportunities into PE, hedge funds, or corporate strategy.",
+    roles: [
+      { title: "Analyst", years: "0–3", desc: "Build models, create pitchbooks, run due diligence. The workhorse of every deal team." },
+      { title: "Associate", years: "3–6", desc: "Manage analysts, interface with clients on day-to-day deal execution, lead modelling workstreams." },
+      { title: "Vice President", years: "6–10", desc: "Own deal execution, manage client relationships, oversee junior team." },
+      { title: "Director / Executive Director", years: "10–15", desc: "Senior execution, client coverage, originate smaller deals." },
+      { title: "Managing Director", years: "15+", desc: "Rainmaker. Originate deals, build client relationships, drive revenue." },
+    ],
+    pay: [
+      { tier: "Bulge Bracket (GS, JPM, MS, Citi, BofA, Barclays)", analyst: "£60–70k base + £50–80k bonus", associate: "£85–110k + £70–120k", vp: "£130–175k + £100–200k", md: "£200–400k + £300k–2M+" },
+      { tier: "Elite Boutique (Evercore, Lazard, PJT, Centerview, Moelis)", analyst: "£65–75k + £60–100k", associate: "£90–120k + £80–140k", vp: "£140–190k + £120–250k", md: "£250–500k + £500k–5M+" },
+      { tier: "Middle Market (Jefferies, Houlihan Lokey, Baird, William Blair)", analyst: "£55–65k + £40–65k", associate: "£75–95k + £50–90k", vp: "£110–150k + £80–150k", md: "£175–300k + £200k–1M" },
+      { tier: "Boutique / Advisory (Rothschild, Greenhill, Perella Weinberg)", analyst: "£55–70k + £40–70k", associate: "£80–100k + £60–100k", vp: "£120–160k + £90–180k", md: "£200–350k + £300k–2M" },
+    ],
     undergrad: {
       process: "Superday → SA offer → FT convert",
       prereqs: ["GPA 3.7+", "Finance/Econ coursework", "Financial modeling", "Bloomberg certification"],
@@ -1124,7 +1138,21 @@ const PLAYBOOKS = {
     }
   },
   consulting: {
-    icon: "📊", name: "Management Consulting",
+    icon: "💼", name: "Management Consulting",
+    description: "Management consultants help organisations solve complex problems — from corporate strategy and operations to technology transformation and M&A integration. Top firms (MBB) offer structured career tracks, global mobility, and strong MBA/PE exits. Work is project-based, typically in 3-6 month engagements with significant travel.",
+    roles: [
+      { title: "Business Analyst / Associate Consultant", years: "0–2", desc: "Data analysis, research, slide creation. Build hypotheses and support recommendations." },
+      { title: "Consultant / Senior Associate", years: "2–5", desc: "Own workstreams, lead client presentations, manage junior team members." },
+      { title: "Manager / Engagement Manager", years: "5–8", desc: "Run entire engagements. Client relationship management. Team leadership." },
+      { title: "Principal / Associate Partner", years: "8–12", desc: "Business development, client origination, practice area leadership." },
+      { title: "Partner / Director", years: "12+", desc: "Equity owner. P&L responsibility. Build and lead major client relationships." },
+    ],
+    pay: [
+      { tier: "MBB (McKinsey, BCG, Bain)", analyst: "£55–65k + £10–20k bonus", consultant: "£70–90k + £15–30k", manager: "£110–140k + £30–60k", partner: "£350k–1M+ (profit share)" },
+      { tier: "Tier 2 (Strategy&, OW, AT Kearney, LEK, Roland Berger)", analyst: "£45–55k + £5–15k", consultant: "£60–80k + £10–20k", manager: "£90–120k + £20–40k", partner: "£250–600k" },
+      { tier: "Big 4 Consulting (Deloitte S&O, EY-P, PwC Strategy, KPMG)", analyst: "£35–45k + £3–8k", consultant: "£50–65k + £5–12k", manager: "£75–100k + £10–25k", partner: "£200–500k" },
+      { tier: "Boutique Strategy (OC&C, Simon-Kucher, Altman Solon)", analyst: "£40–55k + £5–15k", consultant: "£55–75k + £10–20k", manager: "£85–115k + £15–35k", partner: "£200–400k" },
+    ],
     undergrad: {
       process: "Case Interview → Partner Round → BA Offer",
       prereqs: ["Strong GPA", "Case prep 200+ hours", "Leadership role"],
@@ -1155,6 +1183,20 @@ const PLAYBOOKS = {
   },
   product: {
     icon: "📱", name: "Product Management",
+    description: "Product managers sit at the intersection of business, technology, and design. They define what to build, prioritise the roadmap, and ship features that solve real user problems. PM roles are highly competitive at top tech firms, with the best PMs moving into VP Product or founding companies. Strong blend of analytical thinking, user empathy, and technical fluency required.",
+    roles: [
+      { title: "Associate PM / APM", years: "0–2", desc: "Rotational programs at Google, Meta, Stripe etc. Learn PM craft under senior mentorship." },
+      { title: "Product Manager", years: "2–5", desc: "Own a product area. Define requirements, run sprints, ship features. Manage 1-2 engineers." },
+      { title: "Senior PM", years: "5–8", desc: "Own a product line. Set strategy, manage multiple PMs, drive business metrics." },
+      { title: "Group PM / Director", years: "8–12", desc: "Lead a product org. Multiple teams, P&L accountability, exec stakeholder management." },
+      { title: "VP Product / CPO", years: "12+", desc: "Set company product vision. Board-level reporting. Org-wide impact." },
+    ],
+    pay: [
+      { tier: "FAANG / Big Tech (Google, Meta, Apple, Amazon, Microsoft)", apm: "£50–70k + £10–20k + equity", pm: "£80–120k + £20–40k + equity (£20–60k)", senior: "£120–170k + £40–80k + equity (£50–150k)", director: "£180–250k + equity (£100–400k)" },
+      { tier: "High-Growth Startup (Stripe, Monzo, Revolut, Deliveroo)", apm: "£45–60k + equity", pm: "£65–95k + equity", senior: "£95–140k + equity", director: "£140–200k + equity" },
+      { tier: "Scale-Up / Mid-Size Tech", apm: "£35–50k", pm: "£50–75k + £5–10k", senior: "£75–110k + £10–20k", director: "£110–160k" },
+      { tier: "Enterprise / Non-Tech (Banks, Telcos, Retail)", pm: "£45–65k", senior: "£65–90k", director: "£90–130k", vp: "£130–180k" },
+    ],
     undergrad: {
       process: "APM Program → PM → Senior PM",
       prereqs: ["Technical literacy", "User research exp", "Data analysis"],
@@ -1184,7 +1226,20 @@ const PLAYBOOKS = {
     }
   },
   postgrad: {
-    icon: "🎓", name: "Post-Graduate Path",
+    icon: "🎓", name: "Graduate Schemes & Postgrad",
+    description: "Graduate schemes are structured 1-3 year programs offered by large employers across sectors — from finance and consulting to FMCG, tech, and public sector. They typically include rotations, training, mentorship, and a fast-track to management. Postgrad routes (MBA, Masters) offer career pivots and credential upgrades for experienced professionals.",
+    roles: [
+      { title: "Graduate Trainee", years: "0–2", desc: "Rotate across departments. Structured learning program. Fast-track to analyst/associate level." },
+      { title: "Analyst / Associate (post-scheme)", years: "2–4", desc: "Specialise in chosen function. Take on project ownership." },
+      { title: "MBA Candidate", years: "2–5 (pre-MBA)", desc: "Full-time MBA at target school. Recruit for post-MBA roles in consulting, PE, tech, or industry." },
+    ],
+    pay: [
+      { tier: "Finance Grad Schemes (Big 4, Banks, Insurance)", salary: "£28–42k starting, £45–65k post-scheme" },
+      { tier: "FMCG / Consumer (Unilever, P&G, L'Oreal, Diageo)", salary: "£30–35k starting, £40–55k post-scheme + benefits" },
+      { tier: "Tech Grad Schemes (Google, Amazon, Microsoft, Accenture)", salary: "£35–55k starting, £50–80k post-scheme + equity" },
+      { tier: "Public Sector (Civil Service Fast Stream, NHS)", salary: "£28–32k starting, £35–50k post-scheme" },
+      { tier: "Post-MBA (LBS, Oxford, Cambridge, INSEAD)", salary: "£80–120k base + signing bonus £15–30k (consulting/finance)" },
+    ],
     undergrad: {
       process: "Graduate Scheme → Rotational Program → Specialist Role",
       prereqs: ["Strong academic record", "Extra-curricular leadership", "Sector interest clarity", "Networking foundation"],
@@ -1222,6 +1277,20 @@ const PLAYBOOKS = {
   },
   pe: {
     icon: "🦅", name: "Private Equity",
+    description: "Private equity firms acquire companies using a mix of equity and debt, improve operations and strategy over 3-7 years, then sell for a profit. PE is one of the most competitive exit opportunities from IB, offering higher pay, more strategic work, and ownership mentality. The path to partner means building a track record of successful investments.",
+    roles: [
+      { title: "Analyst", years: "0–2", desc: "Support deal execution and portfolio monitoring. Build models, run screening, prepare IC materials." },
+      { title: "Associate", years: "2–5", desc: "Lead deal workstreams. Drive due diligence, work with management teams, build investment cases." },
+      { title: "Vice President / Senior Associate", years: "5–8", desc: "Manage deal processes end-to-end. Board observation. Portfolio company oversight." },
+      { title: "Principal / Director", years: "8–12", desc: "Source deals, lead negotiations, sit on boards. P&L responsibility for portfolio companies." },
+      { title: "Partner / Managing Director", years: "12+", desc: "Carry economics. Fund strategy. LP relationships. Ultimate investment authority." },
+    ],
+    pay: [
+      { tier: "Mega Fund (KKR, Blackstone, Apollo, Carlyle, TPG)", analyst: "£80–100k + £80–120k bonus", associate: "£120–160k + £120–200k", vp: "£200–300k + £200–400k", principal: "£350–500k + carry", partner: "£500k–1M+ base + carry (£1M–10M+)" },
+      { tier: "Upper Mid-Market (Warburg Pincus, Advent, Permira, BC Partners)", associate: "£100–130k + £80–150k", vp: "£160–250k + £150–300k", principal: "£250–400k + carry" },
+      { tier: "Mid-Market (Bridgepoint, EQT, Cinven, Hg Capital)", associate: "£80–110k + £60–100k", vp: "£130–200k + £100–200k", principal: "£200–350k + carry" },
+      { tier: "Growth Equity / Lower Mid-Market", associate: "£65–90k + £30–60k", vp: "£100–160k + £60–120k", principal: "£150–250k + carry" },
+    ],
     undergrad: {
       process: "IB Analyst → PE Associate → VP → Principal → Partner",
       prereqs: ["2+ years IB/consulting", "LBO modeling proficiency", "Strong deal experience", "CFA (nice-to-have)"],
@@ -1265,6 +1334,19 @@ const PLAYBOOKS = {
   },
   vc: {
     icon: "🚀", name: "Venture Capital",
+    description: "Venture capitalists invest in early-stage startups with high growth potential — from pre-seed to Series C+. The role combines investing acumen with operator empathy: sourcing deals, evaluating founders, supporting portfolio companies, and sitting on boards. VC is relationship-driven and thesis-driven; the best VCs have genuine expertise in a sector and a strong founder network.",
+    roles: [
+      { title: "Analyst", years: "0–2", desc: "Market research, deal screening, portfolio support. Often a 2-year program." },
+      { title: "Associate", years: "2–5", desc: "Source deals, take initial meetings, write investment memos, lead due diligence." },
+      { title: "Principal / VP", years: "5–10", desc: "Lead investments, sit on boards, drive firm strategy. Carry participation begins." },
+      { title: "Partner / General Partner", years: "10+", desc: "Full carry. LP relationships. Fund strategy. Investment committee authority." },
+    ],
+    pay: [
+      { tier: "Top-Tier VC (Sequoia, a16z, Accel, Index, Lightspeed)", analyst: "£60–80k + bonus", associate: "£90–140k + carry", principal: "£160–250k + carry", partner: "£250–500k + carry (£500k–5M+ in good vintages)" },
+      { tier: "Mid-Tier / Sector-Focused VC (Balderton, Atomico, Northzone)", analyst: "£45–65k + bonus", associate: "£70–110k + carry", principal: "£120–200k + carry" },
+      { tier: "Seed / Early-Stage (LocalGlobe, Seedcamp, Entrepreneur First)", analyst: "£35–55k", associate: "£55–85k + small carry", partner: "£120–250k + carry" },
+      { tier: "Corporate VC (GV, Intel Capital, Salesforce Ventures)", analyst: "£50–70k + equity", associate: "£80–120k + equity", principal: "£130–200k + equity" },
+    ],
     undergrad: {
       process: "Analyst/Associate → Principal → Partner",
       prereqs: ["Startup experience or strong tech knowledge", "Understanding of cap tables and term sheets", "Portfolio or side projects", "Active in startup ecosystem"],
@@ -1301,7 +1383,20 @@ const PLAYBOOKS = {
     }
   },
   am: {
-    icon: "📊", name: "Asset Management",
+    icon: "📈", name: "Asset Management",
+    description: "Asset managers invest capital on behalf of institutions and individuals across equities, fixed income, alternatives, and multi-asset strategies. The role is fundamentally about generating risk-adjusted returns. Unlike IB which is deal-driven, AM is markets-driven — you need a genuine passion for investing, a defensible investment philosophy, and the discipline to stay rational when markets aren't.",
+    roles: [
+      { title: "Analyst / Research Associate", years: "0–3", desc: "Sector coverage, financial modelling, stock pitches, portfolio monitoring." },
+      { title: "Portfolio Manager", years: "3–8", desc: "Manage a book of capital. Make buy/sell decisions. Client-facing." },
+      { title: "Senior PM / Head of Strategy", years: "8–15", desc: "Lead investment strategy. Manage team of PMs/analysts. Drive AUM growth." },
+      { title: "CIO / Partner", years: "15+", desc: "Set firm-wide investment direction. P&L ownership. LP/client relationships." },
+    ],
+    pay: [
+      { tier: "Large AM (BlackRock, Fidelity, Schroders, PIMCO)", analyst: "£40–55k + £8–15k bonus", pm: "£80–130k + £30–80k", senior: "£130–220k + £60–150k", cio: "£250–500k+ (profit share)" },
+      { tier: "Hedge Fund (Citadel, Millennium, Brevan Howard, Man Group)", analyst: "£70–100k + £50–150k", pm: "£150–300k + £100k–1M+ (P&L %)", senior: "£300k–1M+ (based on returns)" },
+      { tier: "Long-Only / Boutique (Fundsmith, Lindsell Train, Baillie Gifford)", analyst: "£35–50k + £5–15k", pm: "£65–110k + £15–40k", senior: "£100–180k + profit share" },
+      { tier: "Wealth Management (SJP, Rathbones, Brewin Dolphin)", analyst: "£28–40k + £3–8k", advisor: "£40–65k + commission", senior: "£65–100k + commission" },
+    ],
     undergrad: {
       process: "Analyst → PM → Senior PM → CIO",
       prereqs: ["Strong quantitative skills", "CFA Level 1 (in progress)", "Understanding of financial markets", "Stock pitch experience"],
@@ -1338,6 +1433,19 @@ const PLAYBOOKS = {
   },
   trading: {
     icon: "⚡", name: "Sales & Trading",
+    description: "Sales & Trading sits on the markets side of investment banks. Traders manage risk and make markets in equities, fixed income, FX, commodities, and derivatives. Salespeople build client relationships and distribute ideas. The culture is fast-paced, meritocratic, and P&L-driven — performance is measured daily. Strong mental math, market intuition, and the ability to make decisions under pressure are essential.",
+    roles: [
+      { title: "Analyst / Junior Trader", years: "0–3", desc: "Learn product, support senior traders, handle flow, build market views." },
+      { title: "Trader / Salesperson", years: "3–7", desc: "Run a book (trading) or manage client accounts (sales). P&L or revenue attribution." },
+      { title: "VP / Senior Trader", years: "7–12", desc: "Larger risk limits. Client franchise. Desk strategy input." },
+      { title: "MD / Head of Desk", years: "12+", desc: "Desk P&L ownership. Hiring. Risk allocation. Compensation authority." },
+    ],
+    pay: [
+      { tier: "Bulge Bracket S&T (GS, JPM, MS, Citi, Barclays)", analyst: "£55–65k + £30–60k bonus", trader: "£80–120k + £50–200k (desk-dependent)", vp: "£130–200k + £100–400k", md: "£200–350k + £200k–2M+" },
+      { tier: "Macro / Prop Desks (Citadel Securities, Jane Street, Jump)", analyst: "£80–120k + £80–200k", trader: "£150–300k + P&L share (uncapped)", senior: "£300k+ + P&L share" },
+      { tier: "Electronic Trading / Market Making (Flow Traders, Optiver, IMC)", analyst: "£60–80k + £40–80k", trader: "£100–180k + £60–200k", senior: "£200–400k" },
+      { tier: "Mid-Tier / Regional (Jefferies, HSBC, BNP, SocGen)", analyst: "£45–55k + £15–35k", trader: "£65–95k + £30–80k", vp: "£100–160k + £60–150k" },
+    ],
     undergrad: {
       process: "Summer Analyst → Full-Time → VP → MD",
       prereqs: ["Strong mental math", "Understanding of markets and products", "Probability/statistics knowledge", "Real-time market awareness"],
@@ -4158,11 +4266,12 @@ Keep under 150 words. Be specific and direct.`;
 function Playbooks() {
   const [sel, setSel] = useState("ib");
   const [level, setLevel] = useState("undergrad");
-  const [tab, setTab] = useState("milestones");
+  const [tab, setTab] = useState("overview");
   const [deepDive, setDeepDive] = useState(null);
   const [deepDiveContent, setDeepDiveContent] = useState("");
   const [loadingDeep, setLoadingDeep] = useState(false);
   const pb = PLAYBOOKS[sel][level];
+  const industry = PLAYBOOKS[sel];
 
   const openDeepDive = async (milestone) => {
     setDeepDive(milestone);
@@ -4296,11 +4405,69 @@ IMPORTANT: Do NOT use markdown formatting like **, ##, ###, ***, ---, or any oth
             <div className="card-title" style={{fontFamily:"Cormorant Garamond,serif",fontSize:20}}>{PLAYBOOKS[sel].icon} Full Playbook</div>
           </div>
           <div className="flex g4">
-            {["milestones","questions","templates","checklist"].map(t=>(
+            {["overview","milestones","questions","templates","checklist"].map(t=>(
               <button key={t} className={`btn btn-sm ${tab===t?"btn-primary":"btn-outline"}`} style={{textTransform:"capitalize"}} onClick={()=>setTab(t)}>{t}</button>
             ))}
           </div>
         </div>
+
+        {tab==="overview" && (
+          <div>
+            {/* Industry Description */}
+            <div className="card mb16">
+              <div className="fs14 fw7 mb8" style={{color:"var(--ink)"}}>{industry.icon} {industry.name}</div>
+              <div className="fs13 t-ink2" style={{lineHeight:1.8}}>{industry.description}</div>
+            </div>
+
+            {/* Roles */}
+            {industry.roles && industry.roles.length > 0 && (
+              <div className="card mb16">
+                <div className="fs13 fw6 mb10" style={{color:"var(--ink)"}}>Career Progression</div>
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {industry.roles.map((r,i) => (
+                    <div key={i} style={{display:"flex",gap:12,padding:"10px 0",borderBottom:i<industry.roles.length-1?"1px solid var(--border2)":"none"}}>
+                      <div style={{minWidth:28,height:28,borderRadius:8,background:"var(--gold-bg)",color:"var(--gold)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700}}>{i+1}</div>
+                      <div style={{flex:1}}>
+                        <div className="fw6 fs13">{r.title} <span className="fs11 t-ink3">({r.years} yrs)</span></div>
+                        <div className="fs12 t-ink3 mt2">{r.desc}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Pay Ranges */}
+            {industry.pay && industry.pay.length > 0 && (
+              <div className="card">
+                <div className="fs13 fw6 mb10" style={{color:"var(--ink)"}}>💰 Compensation (UK, Annual)</div>
+                <div style={{overflowX:"auto"}}>
+                  <table className="data-table" style={{width:"100%",fontSize:12}}>
+                    <thead>
+                      <tr style={{borderBottom:"2px solid var(--border2)"}}>
+                        <th style={{textAlign:"left",padding:"8px 10px",fontWeight:600,color:"var(--ink)",whiteSpace:"nowrap"}}>Tier</th>
+                        {Object.keys(industry.pay[0]).filter(k=>k!=="tier").map(k=>(
+                          <th key={k} style={{textAlign:"left",padding:"8px 10px",fontWeight:600,color:"var(--ink)",textTransform:"capitalize",whiteSpace:"nowrap"}}>{k}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {industry.pay.map((row,i)=>(
+                        <tr key={i} style={{borderBottom:"1px solid var(--border2)"}}>
+                          <td style={{padding:"8px 10px",fontWeight:500,color:"var(--ink)",maxWidth:220,whiteSpace:"normal"}}>{row.tier}</td>
+                          {Object.entries(row).filter(([k])=>k!=="tier").map(([k,v])=>(
+                            <td key={k} style={{padding:"8px 10px",color:"var(--green)",fontWeight:500,whiteSpace:"nowrap"}}>{v}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="fs11 t-ink3 mt8">* Figures are approximate UK market rates for 2025/2026. Bonuses vary significantly by performance, desk, and market conditions.</div>
+              </div>
+            )}
+          </div>
+        )}
 
         {tab==="milestones" && (
           <div>
